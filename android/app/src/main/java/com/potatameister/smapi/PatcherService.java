@@ -64,10 +64,24 @@ public class PatcherService {
             "apktool", "d", apkFile.getAbsolutePath(), "-o", outputDir.getAbsolutePath(), "-f"
         });
         
+        logProcessOutput(process);
         int exitCode = process.waitFor();
         if (exitCode != 0) {
             throw new Exception("Apktool decompile failed with code: " + exitCode);
         }
+    }
+
+    private void logProcessOutput(Process process) {
+        new Thread(() -> {
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    Log.d(TAG, "[Process] " + line);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error reading process output", e);
+            }
+        }).start();
     }
 
     private void injectSmaliHook(File decompiledDir) throws Exception {
@@ -120,6 +134,7 @@ public class PatcherService {
             "apktool", "b", decompiledDir.getAbsolutePath(), "-o", outputApk.getAbsolutePath()
         });
         
+        logProcessOutput(process);
         int exitCode = process.waitFor();
         if (exitCode != 0) {
             throw new Exception("Apktool build failed with code: " + exitCode);
@@ -131,6 +146,8 @@ public class PatcherService {
         Process process = Runtime.getRuntime().exec(new String[]{
             "apksigner", "sign", "--ks", "potata_patcher.jks", "--ks-pass", "pass:potata-patcher-key-2026", "--out", signedApk.getAbsolutePath(), unsignedApk.getAbsolutePath()
         });
+        
+        logProcessOutput(process);
         int exitCode = process.waitFor();
         if (exitCode != 0) {
             Log.w(TAG, "Apksigner failed, using debug-only placeholder for now.");

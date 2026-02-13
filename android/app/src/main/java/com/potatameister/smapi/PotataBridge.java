@@ -66,4 +66,13 @@ public class PotataBridge extends Plugin {
         MainActivity activity = (MainActivity) getActivity();
         activity.openFolderPicker();
     }
+
+    @PluginMethod
+    public void getSavedFolder(PluginCall call) {
+        MainActivity activity = (MainActivity) getActivity();
+        String path = activity.getSavedFolderUri();
+        JSObject ret = new JSObject();
+        ret.put("path", path);
+        call.resolve(ret);
+    }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import './App.css'
 import PotataBridge from './bridge'
 
@@ -8,6 +8,23 @@ function App() {
   const [isPatching, setIsPatching] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
+  // Auto-load saved folder on startup
+  useEffect(() => {
+    const loadSavedPath = async () => {
+      try {
+        const result = await PotataBridge.getSavedFolder();
+        if (result.path) {
+          setPath(result.path);
+          const modResult = await PotataBridge.getMods({ uri: result.path });
+          setMods(modResult.mods);
+        }
+      } catch (err) {
+        console.error("Auto-load failed", err);
+      }
+    };
+    loadSavedPath();
+  }, []);
+
   const handlePickFolder = async () => {
     try {
       const result = await PotataBridge.pickFolder();
@@ -16,7 +33,7 @@ function App() {
       
       const modResult = await PotataBridge.getMods({ uri: result.path });
       setMods(modResult.mods);
-      setStatus("Ready to Farm");
+      setStatus(null);
     } catch (err) {
       console.error("Failed to pick folder", err);
       setStatus("Folder selection failed");
@@ -63,7 +80,9 @@ function App() {
       <div className='bento-card mod-count'>
         <h3>Mods</h3>
         <h2>{mods.length}</h2>
-        <p>{path ? (mods.length > 0 ? mods.join(', ') : 'No mods found') : 'Set folder to start'}</p>
+        <div style={{ maxHeight: '60px', overflowY: 'auto', fontSize: '0.8rem', color: '#888', marginTop: '4px' }}>
+          {path ? (mods.length > 0 ? mods.join(', ') : 'No mods found') : 'Set folder to start'}
+        </div>
       </div>
 
       {/* SMAPI Status */}
