@@ -39,7 +39,7 @@ jobs:
       run: dotnet restore smapi-engine/src/SMAPI.slnx
 
     - name: Build SMAPI Core
-      run: dotnet build smapi-engine/src/SMAPI/SMAPI.csproj --configuration Release --no-restore
+      run: dotnet build smapi-engine/src/SMAPI/SMAPI.csproj --configuration Release --no-restore -p:GamePath="." -p:CopyToGameFolder="false"
 
     - name: Move SMAPI DLL to Android Assets
       run: |
