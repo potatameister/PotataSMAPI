@@ -43,14 +43,14 @@ jobs:
         echo 'namespace StardewValley.GameData { public class Dummy {} }' >> DummyRefs/Class1.cs
         echo 'namespace Microsoft.Xna.Framework { public class Vector2 { public float X; public float Y; } }' >> DummyRefs/Class1.cs
         dotnet build DummyRefs -c Release
-        cp DummyRefs/bin/Release/net8.0/DummyRefs.dll "Stardew Valley.dll"
-        cp DummyRefs/bin/Release/net8.0/DummyRefs.dll "StardewValley.GameData.dll"
-        cp DummyRefs/bin/Release/net8.0/DummyRefs.dll "BmFont.dll"
-        cp DummyRefs/bin/Release/net8.0/DummyRefs.dll "GalaxyCSharp.dll"
-        cp DummyRefs/bin/Release/net8.0/DummyRefs.dll "Lidgren.Network.dll"
-        cp DummyRefs/bin/Release/net8.0/DummyRefs.dll "MonoGame.Framework.dll"
-        cp DummyRefs/bin/Release/net8.0/DummyRefs.dll "SkiaSharp.dll"
-        cp DummyRefs/bin/Release/net8.0/DummyRefs.dll "xTile.dll"
+        cp DummyRefs/bin/Release/*/DummyRefs.dll "Stardew Valley.dll"
+        cp DummyRefs/bin/Release/*/DummyRefs.dll "StardewValley.GameData.dll"
+        cp DummyRefs/bin/Release/*/DummyRefs.dll "BmFont.dll"
+        cp DummyRefs/bin/Release/*/DummyRefs.dll "GalaxyCSharp.dll"
+        cp DummyRefs/bin/Release/*/DummyRefs.dll "Lidgren.Network.dll"
+        cp DummyRefs/bin/Release/*/DummyRefs.dll "MonoGame.Framework.dll"
+        cp DummyRefs/bin/Release/*/DummyRefs.dll "SkiaSharp.dll"
+        cp DummyRefs/bin/Release/*/DummyRefs.dll "xTile.dll"
         cd ..
 
     - name: Restore SMAPI dependencies
