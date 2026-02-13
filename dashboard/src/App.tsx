@@ -4,11 +4,16 @@ import PotataBridge from './bridge'
 
 function App() {
   const [path, setPath] = useState<string | null>(null);
+  const [mods, setMods] = useState<string[]>([]);
 
   const handlePickFolder = async () => {
     try {
       const result = await PotataBridge.pickFolder();
       setPath(result.path);
+      
+      // Scan for mods immediately after picking
+      const modResult = await PotataBridge.getMods({ uri: result.path });
+      setMods(modResult.mods);
     } catch (err) {
       console.error("Failed to pick folder", err);
     }
@@ -30,8 +35,8 @@ function App() {
       {/* Mod Manager */}
       <div className='bento-card mod-count'>
         <h3>Mods</h3>
-        <h2>0</h2>
-        <p>{path ? 'Checking for mods...' : 'Set folder to start'}</p>
+        <h2>{mods.length}</h2>
+        <p>{path ? (mods.length > 0 ? mods.join(', ') : 'No mods found') : 'Set folder to start'}</p>
       </div>
 
       {/* SMAPI Status */}
