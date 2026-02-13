@@ -82,6 +82,7 @@ function App() {
             Tip: Create a NEW folder (e.g. 'StardewMods') to bypass Android restrictions.
           </p>
         )}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
           {!path ? (
             <button className='play-button' onClick={handlePickFolder}>1. Set Folder</button>
           ) : !apkPath ? (
@@ -139,11 +140,11 @@ function App() {
             </button>
           )}
         </div>
-        <p style={{ fontSize: '0.7rem', wordBreak: 'break-all', opacity: 0.7 }}>
+        <div style={{ fontSize: '0.7rem', wordBreak: 'break-all', opacity: 0.7, marginTop: '8px' }}>
           {path ? `Folder: ${path}` : 'No folder selected'}
           <br/>
           {apkPath ? `APK: ${apkPath.substring(0, 40)}...` : 'No APK selected'}
-        </p>
+        </div>
       </div>
     </div>
   )
