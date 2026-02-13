@@ -1,6 +1,7 @@
 package com.potatameister.smapi;
 
 import android.content.Context;
+import android.net.Uri;
 import android.util.Log;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -23,20 +24,25 @@ public class PatcherService {
         this.context = context;
     }
 
-    public boolean patchGame(String originalApkPath) {
-        Log.d(TAG, "Starting patch process for: " + originalApkPath);
+    public boolean patchGame(String originalApkUri) {
+        Log.d(TAG, "Starting patch process for: " + originalApkUri);
         
         try {
             File workspace = new File(context.getExternalFilesDir(null), "patch_workspace");
             if (workspace.exists()) deleteRecursive(workspace);
             workspace.mkdirs();
 
+            File originalApkFile = new File(workspace, "base_game.apk");
             File decompiledDir = new File(workspace, "decompiled");
             File unsignedApk = new File(workspace, "unsigned.apk");
             File signedApk = new File(workspace, "modded_stardew.apk");
 
+            // 0. Copy APK from Content URI to Workspace
+            Log.d(TAG, "Copying APK to workspace...");
+            copyUriToFile(Uri.parse(originalApkUri), originalApkFile);
+
             // 1. Decompile APK
-            runApktoolDecompile(new File(originalApkPath), decompiledDir);
+            runApktoolDecompile(originalApkFile, decompiledDir);
             
             // 2. Inject Smali Hook
             injectSmaliHook(decompiledDir);
@@ -55,6 +61,17 @@ public class PatcherService {
         } catch (Exception e) {
             Log.e(TAG, "Patching failed", e);
             return false;
+        }
+    }
+
+    private void copyUriToFile(Uri uri, File outFile) throws Exception {
+        try (InputStream is = context.getContentResolver().openInputStream(uri);
+             FileOutputStream fos = new FileOutputStream(outFile)) {
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = is.read(buffer)) != -1) {
+                fos.write(buffer, 0, read);
+            }
         }
     }
 

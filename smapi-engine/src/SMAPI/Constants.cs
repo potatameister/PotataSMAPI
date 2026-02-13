@@ -30,11 +30,16 @@ internal static class EarlyConstants
     /*********
     ** Accessors
     *********/
+    /// <summary>The base directory for Android data (overridden by the launcher).</summary>
+    public static string? AndroidBaseDirPath { get; set; }
+
     /// <summary>The path to the game folder.</summary>
     public static string GamePath { get; } = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
 
     /// <summary>The absolute path to the folder containing SMAPI's internal files.</summary>
-    public static readonly string InternalFilesPath = Path.Combine(EarlyConstants.GamePath, "smapi-internal");
+    public static string InternalFilesPath => EarlyConstants.Platform == GamePlatform.Android && !string.IsNullOrEmpty(EarlyConstants.AndroidBaseDirPath)
+        ? Path.Combine(EarlyConstants.AndroidBaseDirPath, "smapi-internal")
+        : Path.Combine(EarlyConstants.GamePath, "smapi-internal");
 
     /// <summary>The target game platform.</summary>
     internal static GamePlatform Platform { get; } = (GamePlatform)Enum.Parse(typeof(GamePlatform), LowLevelEnvironmentUtility.DetectPlatform());
@@ -86,7 +91,11 @@ public static class Constants
     public static string ContentPath { get; } = Constants.GetContentFolderPath();
 
     /// <summary>The base directory for Android data (overridden by the launcher).</summary>
-    public static string? AndroidBaseDirPath { get; set; }
+    public static string? AndroidBaseDirPath
+    {
+        get => EarlyConstants.AndroidBaseDirPath;
+        set => EarlyConstants.AndroidBaseDirPath = value;
+    }
 
     /// <summary>The directory path containing Stardew Valley's app data.</summary>
     public static string DataPath { get; } = Constants.TargetPlatform == GamePlatform.Android && !string.IsNullOrEmpty(Constants.AndroidBaseDirPath)
@@ -120,7 +129,7 @@ public static class Constants
     internal const string HomePageUrl = "https://smapi.io";
 
     /// <summary>The absolute path to the folder containing SMAPI's internal files.</summary>
-    internal static readonly string InternalFilesPath = EarlyConstants.InternalFilesPath;
+    internal static string InternalFilesPath => EarlyConstants.InternalFilesPath;
 
     /// <summary>The file path for the SMAPI configuration file.</summary>
     internal static string ApiConfigPath => Path.Combine(Constants.InternalFilesPath, "config.json");

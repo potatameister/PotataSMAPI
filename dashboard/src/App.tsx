@@ -4,6 +4,7 @@ import PotataBridge from './bridge'
 
 function App() {
   const [path, setPath] = useState<string | null>(null);
+  const [apkPath, setApkPath] = useState<string | null>(null);
   const [mods, setMods] = useState<string[]>([]);
   const [isPatching, setIsPatching] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -40,14 +41,21 @@ function App() {
     }
   };
 
+  const handlePickApk = async () => {
+    try {
+      const result = await PotataBridge.pickApk();
+      setApkPath(result.path);
+    } catch (err) {
+      console.error("Failed to pick APK", err);
+    }
+  };
+
   const handleLaunch = async () => {
-    if (!path) return;
+    if (!path || !apkPath) return;
     setIsPatching(true);
     setStatus("Starting Digital Surgery...");
     try {
-      // In a real test, the user would provide the APK path
-      // For now, we simulate the bridge call
-      await PotataBridge.startPatching({ path: "dummy_internal_path" });
+      await PotataBridge.startPatching({ path: apkPath });
       setStatus("Patching Complete! Please install the modded APK.");
     } catch (err) {
       setStatus("Patching Failed. Check logs.");
@@ -56,24 +64,36 @@ function App() {
     }
   };
 
+  const handleReset = () => {
+    setPath(null);
+    setApkPath(null);
+    setMods([]);
+    setStatus(null);
+  };
+
   return (
     <div className='dashboard'>
       {/* Main Status & Play */}
       <div className='bento-card hero'>
         <h3>Stardew Valley</h3>
-        <h2>{status || (path ? 'Ready to Farm' : 'Setup Required')}</h2>
-        {!path ? (
-          <button className='play-button' onClick={handlePickFolder}>Set Game Folder</button>
-        ) : (
-          <button 
-            className='play-button' 
-            onClick={handleLaunch} 
-            disabled={isPatching}
-            style={{ opacity: isPatching ? 0.5 : 1 }}
-          >
-            {isPatching ? 'Patching...' : 'Launch Game'}
-          </button>
-        )}
+        <h2>{status || (path ? (apkPath ? 'Ready to Farm' : 'APK Required') : 'Setup Required')}</h2>
+        
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+          {!path ? (
+            <button className='play-button' onClick={handlePickFolder}>1. Set Folder</button>
+          ) : !apkPath ? (
+            <button className='play-button' onClick={handlePickApk}>2. Select Game APK</button>
+          ) : (
+            <button 
+              className='play-button' 
+              onClick={handleLaunch} 
+              disabled={isPatching}
+              style={{ opacity: isPatching ? 0.5 : 1 }}
+            >
+              {isPatching ? 'Patching...' : '3. Patch & Launch'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Mod Manager */}
@@ -95,13 +115,33 @@ function App() {
         </div>
       </div>
 
-      {/* Path Info (New Card) */}
-      {path && (
-        <div className='bento-card logs' style={{ gridColumn: 'span 2' }}>
-          <h3>Base Directory</h3>
-          <p style={{ fontSize: '0.7rem', wordBreak: 'break-all', opacity: 0.7 }}>{path}</p>
+      {/* Settings/Reset (New Card) */}
+      <div className='bento-card logs' style={{ gridColumn: 'span 2' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3>Settings</h3>
+          {(path || apkPath) && (
+            <button 
+              onClick={handleReset}
+              style={{ 
+                background: 'transparent', 
+                border: '1px solid #444', 
+                color: '#888', 
+                borderRadius: '8px', 
+                padding: '4px 8px',
+                fontSize: '0.7rem',
+                cursor: 'pointer'
+              }}
+            >
+              Reset Setup
+            </button>
+          )}
         </div>
-      )}
+        <p style={{ fontSize: '0.7rem', wordBreak: 'break-all', opacity: 0.7 }}>
+          {path ? `Folder: ${path}` : 'No folder selected'}
+          <br/>
+          {apkPath ? `APK: ${apkPath.substring(0, 40)}...` : 'No APK selected'}
+        </p>
+      </div>
     </div>
   )
 }

@@ -75,4 +75,11 @@ public class PotataBridge extends Plugin {
         ret.put("path", path);
         call.resolve(ret);
     }
+
+    @PluginMethod
+    public void pickApk(PluginCall call) {
+        saveCall(call);
+        MainActivity activity = (MainActivity) getActivity();
+        activity.openApkPicker();
+    }
 }

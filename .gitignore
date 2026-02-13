@@ -4,7 +4,8 @@ GEMINI.md
 tmp/
 
 # Android
-build/
+/android/app/build/
+/android/build/
 *.apk
 *.aar
 local.properties
@@ -22,8 +23,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnp*
 .pnp.js
-dist/
-build/
+/dashboard/dist/
+/dashboard/build/
 
 # OS / IDE
 .DS_Store

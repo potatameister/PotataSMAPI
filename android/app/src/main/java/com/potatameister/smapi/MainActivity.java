@@ -9,6 +9,7 @@ import com.getcapacitor.PluginCall;
 
 public class MainActivity extends BridgeActivity {
     private static final int PICK_FOLDER_REQUEST = 1001;
+    private static final int PICK_APK_REQUEST = 1002;
     private static final String PREFS_NAME = "PotataPrefs";
     private static final String KEY_FOLDER_URI = "folder_uri";
 
@@ -23,6 +24,13 @@ public class MainActivity extends BridgeActivity {
         startActivityForResult(intent, PICK_FOLDER_REQUEST);
     }
 
+    public void openApkPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/vnd.android.package-archive");
+        startActivityForResult(intent, PICK_APK_REQUEST);
+    }
+
     public String getSavedFolderUri() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         return prefs.getString(KEY_FOLDER_URI, null);
@@ -32,24 +40,29 @@ public class MainActivity extends BridgeActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        if (requestCode == PICK_FOLDER_REQUEST && resultCode == RESULT_OK) {
-            if (data != null) {
-                Uri uri = data.getData();
+        if (resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (requestCode == PICK_FOLDER_REQUEST) {
                 getContentResolver().takePersistableUriPermission(uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
 
-                // Save URI persistently
                 SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
                 editor.putString(KEY_FOLDER_URI, uri.toString());
                 editor.apply();
 
-                PluginCall call = getBridge().getSavedCall("PotataBridge");
-                if (call != null) {
-                    JSObject ret = new JSObject();
-                    ret.put("path", uri.toString());
-                    call.resolve(ret);
-                }
+                resolveBridgeCall("PotataBridge", uri.toString());
+            } else if (requestCode == PICK_APK_REQUEST) {
+                resolveBridgeCall("PotataBridge", uri.toString());
             }
+        }
+    }
+
+    private void resolveBridgeCall(String pluginName, String resultPath) {
+        PluginCall call = getBridge().getSavedCall(pluginName);
+        if (call != null) {
+            JSObject ret = new JSObject();
+            ret.put("path", resultPath);
+            call.resolve(ret);
         }
     }
 }
