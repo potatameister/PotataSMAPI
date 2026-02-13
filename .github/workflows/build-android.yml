@@ -35,11 +35,21 @@ jobs:
         cache-dependency-path: dashboard/package-lock.json
 
     # 1. Build SMAPI Core (C#)
+    - name: Generate Dummy References
+      run: |
+        cd smapi-engine
+        dotnet new console -n Mocker
+        cp generate-references.cs Mocker/Program.cs
+        cd Mocker
+        dotnet run
+        cp *.dll ..
+        cd ../..
+
     - name: Restore SMAPI dependencies
       run: dotnet restore smapi-engine/src/SMAPI.slnx
 
     - name: Build SMAPI Core
-      run: dotnet build smapi-engine/src/SMAPI/SMAPI.csproj --configuration Release --no-restore -p:GamePath="." -p:CopyToGameFolder="false"
+      run: dotnet build smapi-engine/src/SMAPI/SMAPI.csproj --configuration Release --no-restore -p:GamePath="../../" -p:CopyToGameFolder="false"
 
     - name: Move SMAPI DLL to Android Assets
       run: |
