@@ -28,16 +28,20 @@ function App() {
 
   const handlePickFolder = async () => {
     try {
+      setStatus("Opening Picker...");
       const result = await PotataBridge.pickFolder();
-      setPath(result.path);
-      setStatus("Scanning for mods...");
-      
-      const modResult = await PotataBridge.getMods({ uri: result.path });
-      setMods(modResult.mods);
-      setStatus(null);
+      if (result.path) {
+        setPath(result.path);
+        setStatus("Scanning for mods...");
+        const modResult = await PotataBridge.getMods({ uri: result.path });
+        setMods(modResult.mods);
+        setStatus(null);
+      } else {
+        setStatus("Selection cancelled");
+      }
     } catch (err) {
       console.error("Failed to pick folder", err);
-      setStatus("Folder selection failed");
+      setStatus("Error: Permission Denied or Picker Failed");
     }
   };
 
