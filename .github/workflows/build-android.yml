@@ -1,0 +1,46 @@
+name: Build PotataSMAPI APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Build Dashboard (UI)
+      run: |
+        cd dashboard
+        npm install
+        npm run build
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Build Android APK
+      run: |
+        cd android
+        chmod +x gradlew
+        ./gradlew assembleDebug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: PotataSMAPI-Debug-APK
+        path: android/app/build/outputs/apk/debug/app-debug.apk
