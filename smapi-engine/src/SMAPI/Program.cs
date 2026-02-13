@@ -46,7 +46,10 @@ internal class Program
         }
         catch (BadImageFormatException ex) when (ex.FileName == EarlyConstants.GameAssemblyName)
         {
-            Console.WriteLine($"SMAPI failed to initialize because your game's {ex.FileName}.exe seems to be invalid.\nThis may be a pirated version which modified the executable in an incompatible way; if so, you can try a different download or buy a legitimate version.\n\nTechnical details:\n{ex}");
+            // PotataSMAPI: Warn instead of crash for potential cracked versions to ensure compatibility
+            Console.WriteLine($"[PotataSMAPI] Warning: The game executable seems to be modified. If this is an unofficial version, please consider buying the legitimate version to support ConcernedApe!");
+            Console.WriteLine($"[PotataSMAPI] Attempting to continue anyway...");
+            Program.Start(args);
         }
         catch (Exception ex)
         {

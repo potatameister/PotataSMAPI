@@ -85,8 +85,13 @@ public static class Constants
     /// <summary>The path to the game's <c>Content</c> folder.</summary>
     public static string ContentPath { get; } = Constants.GetContentFolderPath();
 
+    /// <summary>The base directory for Android data (overridden by the launcher).</summary>
+    public static string? AndroidBaseDirPath { get; set; }
+
     /// <summary>The directory path containing Stardew Valley's app data.</summary>
-    public static string DataPath { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "StardewValley");
+    public static string DataPath { get; } = Constants.TargetPlatform == GamePlatform.Android && !string.IsNullOrEmpty(Constants.AndroidBaseDirPath)
+        ? Constants.AndroidBaseDirPath
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "StardewValley");
 
     /// <summary>The directory path in which error logs should be stored.</summary>
     public static string LogDir { get; } = Path.Combine(Constants.DataPath, "ErrorLogs");
@@ -157,7 +162,9 @@ public static class Constants
     internal static string UpdateMarker => Path.Combine(Constants.InternalFilesPath, "StardewModdingAPI.update.marker");
 
     /// <summary>The default full path to search for mods.</summary>
-    internal static string DefaultModsPath { get; } = Path.Combine(Constants.GamePath, "Mods");
+    internal static string DefaultModsPath { get; } = Constants.TargetPlatform == GamePlatform.Android && !string.IsNullOrEmpty(Constants.AndroidBaseDirPath)
+        ? Path.Combine(Constants.AndroidBaseDirPath, "Mods")
+        : Path.Combine(Constants.GamePath, "Mods");
 
     /// <summary>The actual full path to search for mods.</summary>
     internal static string ModsPath { get; set; } = null!; // initialized early during SMAPI startup
