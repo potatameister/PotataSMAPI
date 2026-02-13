@@ -5,17 +5,37 @@ import PotataBridge from './bridge'
 function App() {
   const [path, setPath] = useState<string | null>(null);
   const [mods, setMods] = useState<string[]>([]);
+  const [isPatching, setIsPatching] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
 
   const handlePickFolder = async () => {
     try {
       const result = await PotataBridge.pickFolder();
       setPath(result.path);
+      setStatus("Scanning for mods...");
       
-      // Scan for mods immediately after picking
       const modResult = await PotataBridge.getMods({ uri: result.path });
       setMods(modResult.mods);
+      setStatus("Ready to Farm");
     } catch (err) {
       console.error("Failed to pick folder", err);
+      setStatus("Folder selection failed");
+    }
+  };
+
+  const handleLaunch = async () => {
+    if (!path) return;
+    setIsPatching(true);
+    setStatus("Starting Digital Surgery...");
+    try {
+      // In a real test, the user would provide the APK path
+      // For now, we simulate the bridge call
+      await PotataBridge.startPatching({ path: "dummy_internal_path" });
+      setStatus("Patching Complete! Please install the modded APK.");
+    } catch (err) {
+      setStatus("Patching Failed. Check logs.");
+    } finally {
+      setIsPatching(false);
     }
   };
 
@@ -24,11 +44,18 @@ function App() {
       {/* Main Status & Play */}
       <div className='bento-card hero'>
         <h3>Stardew Valley</h3>
-        <h2>{path ? 'Ready to Farm' : 'Setup Required'}</h2>
+        <h2>{status || (path ? 'Ready to Farm' : 'Setup Required')}</h2>
         {!path ? (
           <button className='play-button' onClick={handlePickFolder}>Set Game Folder</button>
         ) : (
-          <button className='play-button'>Launch Game</button>
+          <button 
+            className='play-button' 
+            onClick={handleLaunch} 
+            disabled={isPatching}
+            style={{ opacity: isPatching ? 0.5 : 1 }}
+          >
+            {isPatching ? 'Patching...' : 'Launch Game'}
+          </button>
         )}
       </div>
 
