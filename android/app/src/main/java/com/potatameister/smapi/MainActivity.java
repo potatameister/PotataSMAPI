@@ -1,23 +1,26 @@
 package com.potatameister.smapi;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.Settings;
+import android.util.Log;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 
-import android.Manifest;
-import android.content.pm.PackageManager;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
 public class MainActivity extends BridgeActivity {
     private static final int PICK_FOLDER_REQUEST = 1001;
     private static final int PICK_APK_REQUEST = 1002;
-    private static final int PERMISSION_REQUEST_CODE = 200;
+    private static final int MANAGE_STORAGE_REQUEST = 1003;
     private static final String PREFS_NAME = "PotataPrefs";
     private static final String KEY_FOLDER_URI = "folder_uri";
 
@@ -29,12 +32,26 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void requestAllPermissions() {
-        String[] permissions = {
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
-        };
-        
-        ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                    intent.addCategory("android.intent.category.DEFAULT");
+                    intent.setData(Uri.parse(String.format("package:%s", getPackageName())));
+                    startActivityForResult(intent, MANAGE_STORAGE_REQUEST);
+                } catch (Exception e) {
+                    Intent intent = new Intent();
+                    intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    startActivityForResult(intent, MANAGE_STORAGE_REQUEST);
+                }
+            }
+        } else {
+            String[] permissions = {
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            };
+            ActivityCompat.requestPermissions(this, permissions, 200);
+        }
     }
 
     public void openFolderPicker() {
@@ -42,6 +59,8 @@ public class MainActivity extends BridgeActivity {
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        // Force show internal storage
+        intent.putExtra("android.content.extra.SHOW_ADVANCED", true);
         startActivityForResult(intent, PICK_FOLDER_REQUEST);
     }
 
@@ -60,6 +79,11 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == MANAGE_STORAGE_REQUEST) {
+            Log.d("Potata", "Returned from Manage Storage settings");
+            return;
+        }
 
         if (resultCode == RESULT_OK && data != null) {
             Uri uri = data.getData();
