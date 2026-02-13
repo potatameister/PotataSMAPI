@@ -1,0 +1,39 @@
+# user-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# build results
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio cache/options
+.config/
+.vs/
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# Rider
+.idea/
+
+# NuGet packages
+*.nupkg
+**/packages/*
+*.nuget.props
+*.nuget.targets
+
+# sensitive files
+appsettings.Development.json
+
+# Azure generated files
+src/SMAPI.Web/Properties/PublishProfiles
+src/SMAPI.Web/Properties/ServiceDependencies
+
+# macOS
+.DS_Store

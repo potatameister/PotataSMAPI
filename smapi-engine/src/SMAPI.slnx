@@ -1,0 +1,65 @@
+<Solution>
+  <Folder Name="/.root/">
+    <File Path="../.editorconfig" />
+    <File Path="../.gitattributes" />
+    <File Path="../.gitignore" />
+    <File Path="../LICENSE.txt" />
+    <File Path="Directory.Packages.props" />
+  </Folder>
+  <Folder Name="/.root/.github/">
+    <File Path="../.github/CONTRIBUTING.md" />
+    <File Path="../.github/SUPPORT.md" />
+    <File Path="../.github/workflows/build-smapi.yml" />
+  </Folder>
+  <Folder Name="/.root/.github/ISSUE_TEMPLATE/">
+    <File Path="../.github/ISSUE_TEMPLATE/config.yml" />
+    <File Path="../.github/ISSUE_TEMPLATE/custom.md" />
+  </Folder>
+  <Folder Name="/.root/build/">
+    <File Path="../build/common.targets" />
+    <File Path="../build/deploy-local-smapi.targets" />
+    <File Path="../build/find-game-folder.targets" />
+  </Folder>
+  <Folder Name="/.root/build/scripts/">
+    <File Path="../build/scripts/finalize-install-package.sh" />
+    <File Path="../build/scripts/prepare-install-package.ps1" />
+    <File Path="../build/scripts/set-smapi-version.ps1" />
+  </Folder>
+  <Folder Name="/.root/build/scripts/lib/">
+    <File Path="../build/scripts/lib/in-place-regex.ps1" />
+  </Folder>
+  <Folder Name="/.root/docs/">
+    <File Path="../docs/mod-build-config.md" />
+    <File Path="../docs/README.md" />
+    <File Path="../docs/release-notes-archived.md" />
+    <File Path="../docs/release-notes.md" />
+  </Folder>
+  <Folder Name="/.root/docs/technical/">
+    <File Path="../docs/technical/mod-package-release-notes.md" />
+    <File Path="../docs/technical/mod-package.md" />
+    <File Path="../docs/technical/smapi.md" />
+    <File Path="../docs/technical/web.md" />
+  </Folder>
+  <Folder Name="/Internal/">
+    <Project Path="SMAPI.Internal/SMAPI.Internal.shproj" />
+    <Project Path="SMAPI.ModBuildConfig.Analyzer.Tests/SMAPI.ModBuildConfig.Analyzer.Tests.csproj" />
+    <Project Path="SMAPI.Tests.ModApiConsumer/SMAPI.Tests.ModApiConsumer.csproj" />
+    <Project Path="SMAPI.Tests.ModApiProvider/SMAPI.Tests.ModApiProvider.csproj" />
+    <Project Path="SMAPI.Tests/SMAPI.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Mods/">
+    <Project Path="SMAPI.Mods.ConsoleCommands/SMAPI.Mods.ConsoleCommands.csproj" />
+    <Project Path="SMAPI.Mods.SaveBackup/SMAPI.Mods.SaveBackup.csproj" />
+  </Folder>
+  <Project Path="SMAPI.Installer/SMAPI.Installer.csproj">
+    <BuildDependency Project="SMAPI.Mods.ConsoleCommands/SMAPI.Mods.ConsoleCommands.csproj" />
+    <BuildDependency Project="SMAPI.Mods.SaveBackup/SMAPI.Mods.SaveBackup.csproj" />
+    <BuildDependency Project="SMAPI/SMAPI.csproj" />
+  </Project>
+  <Project Path="SMAPI.ModBuildConfig.Analyzer/SMAPI.ModBuildConfig.Analyzer.csproj" />
+  <Project Path="SMAPI.ModBuildConfig/SMAPI.ModBuildConfig.csproj" />
+  <Project Path="SMAPI.Toolkit.CoreInterfaces/SMAPI.Toolkit.CoreInterfaces.csproj" />
+  <Project Path="SMAPI.Toolkit/SMAPI.Toolkit.csproj" />
+  <Project Path="SMAPI.Web/SMAPI.Web.csproj" />
+  <Project Path="SMAPI/SMAPI.csproj" />
+</Solution>
