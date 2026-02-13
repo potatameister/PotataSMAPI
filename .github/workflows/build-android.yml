@@ -37,6 +37,7 @@ jobs:
         cd dashboard
         npm install
         npm run build
+        npx cap sync android
 
     # 2. Build Android APK
     - name: Set up Android SDK
