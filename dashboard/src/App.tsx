@@ -77,8 +77,11 @@ function App() {
       <div className='bento-card hero'>
         <h3>Stardew Valley</h3>
         <h2>{status || (path ? (apkPath ? 'Ready to Farm' : 'APK Required') : 'Setup Required')}</h2>
-        
-        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+        {!path && (
+          <p style={{ fontSize: '0.7rem', color: '#ffcc00', marginTop: '4px' }}>
+            Tip: Create a NEW folder (e.g. 'StardewMods') to bypass Android restrictions.
+          </p>
+        )}
           {!path ? (
             <button className='play-button' onClick={handlePickFolder}>1. Set Folder</button>
           ) : !apkPath ? (
