@@ -28,6 +28,9 @@ function App() {
 
   const handlePickFolder = async () => {
     try {
+      setStatus("Checking Permissions...");
+      await PotataBridge.requestPermissions();
+      
       setStatus("Opening Picker...");
       const result = await PotataBridge.pickFolder();
       if (result.path) {

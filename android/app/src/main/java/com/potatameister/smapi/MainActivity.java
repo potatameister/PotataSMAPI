@@ -28,10 +28,9 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(PotataBridge.class);
         super.onCreate(savedInstanceState);
-        requestAllPermissions();
     }
 
-    private void requestAllPermissions() {
+    public void requestAllPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 try {

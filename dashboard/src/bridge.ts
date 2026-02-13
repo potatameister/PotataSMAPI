@@ -6,6 +6,7 @@ export interface PotataBridgePlugin {
   pickApk(): Promise<{ path: string }>;
   getSavedFolder(): Promise<{ path: string | null }>;
   getMods(options: { uri: string }): Promise<{ mods: string[] }>;
+  requestPermissions(): Promise<void>;
 }
 
 const PotataBridge = registerPlugin<PotataBridgePlugin>('PotataBridge');
