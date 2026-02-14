@@ -9,13 +9,12 @@ import java.io.FileOutputStream
 import java.util.Scanner
 import brut.androlib.ApkDecoder
 import brut.androlib.Androlib
-import brut.androlib.Config
 
 class PatcherService(private val context: Context) {
     private val TAG = "PotataPatcher"
 
     fun patchGame(originalApkPath: String) {
-        Log.d(TAG, "Starting library-based digital surgery for: $originalApkPath")
+        Log.d(TAG, "Starting stable digital surgery for: $originalApkPath")
         
         val workspace = File(context.externalCacheDir, "patch_workspace")
         if (workspace.exists()) workspace.deleteRecursively()
@@ -37,11 +36,11 @@ class PatcherService(private val context: Context) {
             throw Exception("Copy failed: ${e.message}")
         }
 
-        // 1. Decompile using Apktool Lib
+        // 1. Decompile using Apktool Lib 2.9.3 API
         try {
-            val config = Config.getDefaultConfig()
-            val decoder = ApkDecoder(config, originalApkFile)
-            decoder.decode(decompiledDir)
+            val decoder = ApkDecoder(originalApkFile)
+            decoder.setOutDir(decompiledDir)
+            decoder.decode()
         } catch (e: Exception) {
             throw Exception("Decompile failed: ${e.message}")
         }
@@ -55,10 +54,9 @@ class PatcherService(private val context: Context) {
             throw Exception("Injection failed: ${e.message}")
         }
         
-        // 3. Rebuild using Apktool Lib
+        // 3. Rebuild using Apktool Lib 2.9.3 API
         try {
-            val config = Config.getDefaultConfig()
-            val builder = Androlib(config)
+            val builder = Androlib()
             builder.build(decompiledDir, unsignedApk)
         } catch (e: Exception) {
             throw Exception("Rebuild failed: ${e.message}")
@@ -75,7 +73,7 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
-        if (!smapiDir.exists() && !smapiDir.mkdirs()) throw Exception("Failed to create smapi directory")
+        if (!sapiDir.exists() && !sapiDir.mkdirs()) throw Exception("Failed to create smapi directory")
         
         val smaliCode = ".class public Lcom/potatameister/smapi/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
@@ -83,12 +81,12 @@ class PatcherService(private val context: Context) {
                 ".method public static init()V\n" +
                 "    .registers 2\n" +
                 "    const-string v0, \"SmapiNative\"\n" +
-                "    const-string v1, \"SMAPI Bootstrapping from Lib...\"\n" +
+                "    const-string v1, \"SMAPI Bootstrapping from Stable Lib...\"\n" +
                 "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
                 "    return-void\n" +
                 ".end method"
 
-        File(smapiDir, "SmapiNative.smali").writeText(smaliCode)
+        File(sapiDir, "SmapiNative.smali").writeText(smaliCode)
     }
 
     private fun injectSmaliHook(decompiledDir: File) {

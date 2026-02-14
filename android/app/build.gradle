@@ -60,7 +60,7 @@ dependencies {
     implementation "androidx.compose.runtime:runtime:$compose_ui_version"
     
     implementation "androidx.documentfile:documentfile:1.0.1"
-    implementation 'org.apktool:apktool-lib:2.12.1'
+    implementation 'org.apktool:apktool-lib:2.9.3'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
