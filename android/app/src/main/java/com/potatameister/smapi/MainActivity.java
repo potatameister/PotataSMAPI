@@ -33,6 +33,11 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(PotataBridge.class);
         super.onCreate(savedInstanceState);
+        
+        // Request on startup
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            requestManualPermissions();
+        }
 
         folderPickerLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),

@@ -7,6 +7,7 @@ export interface PotataBridgePlugin {
   getSavedFolder(): Promise<{ path: string | null }>;
   getMods(options: { uri: string }): Promise<{ mods: string[] }>;
   requestManualPermissions(): Promise<void>;
+  checkPermissions(): Promise<{ granted: boolean }>;
 }
 
 const PotataBridge = registerPlugin<PotataBridgePlugin>('PotataBridge');

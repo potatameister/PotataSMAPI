@@ -9,10 +9,14 @@ function App() {
   const [mods, setMods] = useState<string[]>([]);
   const [isPatching, setIsPatching] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [hasPermission, setHasPermission] = useState(true);
 
   useEffect(() => {
-    const loadSavedPath = async () => {
+    const init = async () => {
       try {
+        const perm = await PotataBridge.checkPermissions();
+        setHasPermission(perm.granted);
+
         const result = await PotataBridge.getSavedFolder();
         if (result.path) {
           setPath(result.path);
@@ -20,11 +24,18 @@ function App() {
           setMods(modResult.mods);
         }
       } catch (err) {
-        console.error("Auto-load failed", err);
+        console.error("Init failed", err);
       }
     };
-    loadSavedPath();
+    init();
   }, []);
+
+  const handleGrantPermission = async () => {
+    await PotataBridge.requestManualPermissions();
+    // After returning from settings, the user should restart or we can re-check
+    const perm = await PotataBridge.checkPermissions();
+    setHasPermission(perm.granted);
+  };
 
   const handlePickFolder = async () => {
     try {
@@ -99,7 +110,16 @@ function App() {
       <div className='bento-card hero'>
         <h3>Stardew Valley</h3>
         <h2>{status || (path ? (apkPath ? 'Ready to Farm' : 'APK Required') : 'Setup Required')}</h2>
-        {!path && (
+        {!hasPermission && (
+          <button 
+            className='play-button' 
+            style={{ backgroundColor: '#f44336', color: 'white' }}
+            onClick={handleGrantPermission}
+          >
+            Grant Storage Access
+          </button>
+        )}
+        {!path && hasPermission && (
           <p style={{ fontSize: '0.7rem', color: '#ffcc00', marginTop: '4px' }}>
             Tip: Create a NEW folder (e.g. 'StardewMods') to bypass Android restrictions.
           </p>

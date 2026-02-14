@@ -16,30 +16,54 @@ public class PotataBridge extends Plugin {
 
     @PluginMethod
     public void getMods(PluginCall call) {
-        String folderUri = call.getString("uri");
-        if (folderUri == null) {
-            call.reject("No folder URI provided");
+        String input = call.getString("uri");
+        if (input == null) {
+            call.reject("No path/URI provided");
             return;
         }
 
-        Uri uri = Uri.parse(folderUri);
-        DocumentFile root = DocumentFile.fromTreeUri(getContext(), uri);
-        DocumentFile modsFolder = root.findFile("Mods");
+        List<String> modNames = new java.util.ArrayList<>();
 
-        JSArray modNames = new JSArray();
-        if (modsFolder != null && modsFolder.isDirectory()) {
-            for (DocumentFile file : modsFolder.listFiles()) {
-                if (file.isDirectory()) {
-                    modNames.put(file.getName());
+        if (input.startsWith("content://")) {
+            // Handle SAF URI
+            Uri uri = Uri.parse(input);
+            DocumentFile root = DocumentFile.fromTreeUri(getContext(), uri);
+            DocumentFile modsFolder = root.findFile("Mods");
+            if (modsFolder != null && modsFolder.isDirectory()) {
+                for (DocumentFile file : modsFolder.listFiles()) {
+                    if (file.isDirectory()) modNames.add(file.getName());
                 }
             }
-        } else if (modsFolder == null) {
-            // Create the Mods folder if it doesn't exist
-            root.createDirectory("Mods");
+        } else {
+            // Handle Direct File Path (Requires All Files Access)
+            File modsFolder = new File(input, "Mods");
+            if (!modsFolder.exists()) modsFolder.mkdirs();
+            
+            File[] files = modsFolder.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (f.isDirectory()) modNames.add(f.getName());
+                }
+            }
         }
 
         JSObject ret = new JSObject();
-        ret.put("mods", modNames);
+        JSArray jsArray = new JSArray();
+        for (String name : modNames) jsArray.put(name);
+        ret.put("mods", jsArray);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void checkPermissions(PluginCall call) {
+        boolean granted = false;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            granted = android.os.Environment.isExternalStorageManager();
+        } else {
+            granted = ContextCompat.checkSelfPermission(getContext(), android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        }
+        JSObject ret = new JSObject();
+        ret.put("granted", granted);
         call.resolve(ret);
     }
 
