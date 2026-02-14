@@ -38,6 +38,9 @@ public class MainActivity extends BridgeActivity {
             new ActivityResultContracts.StartActivityForResult(),
             result -> checkAndInitFolder()
         );
+
+        // Auto-init on startup
+        checkAndInitFolder();
     }
 
     public void checkAndInitFolder() {
@@ -45,7 +48,12 @@ public class MainActivity extends BridgeActivity {
             if (!Environment.isExternalStorageManager()) {
                 Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                 intent.setData(Uri.parse("package:" + getPackageName()));
-                manageStorageLauncher.launch(intent);
+                try {
+                    manageStorageLauncher.launch(intent);
+                } catch (Exception e) {
+                    Intent fallback = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    manageStorageLauncher.launch(fallback);
+                }
                 return;
             }
         }
@@ -57,7 +65,7 @@ public class MainActivity extends BridgeActivity {
         if (!root.exists()) root.mkdirs();
         if (!mods.exists()) mods.mkdirs();
 
-        Toast.makeText(this, "Folder Ready: /sdcard/" + DEFAULT_FOLDER_NAME, Toast.LENGTH_SHORT).show();
+        Log.d("Potata", "Folder Ready: " + root.getAbsolutePath());
     }
 
     public void openApkPicker() {

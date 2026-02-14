@@ -18,17 +18,21 @@ function App() {
     }
   };
 
-  const handleInit = async () => {
-    try {
-      setStatus("Initializing folder...");
-      const result = await PotataBridge.initFolder();
-      setPath(result.path);
-      await scanMods(result.path);
-      setStatus(null);
-    } catch (err) {
-      setStatus("Initialization failed - Check permissions");
-    }
-  };
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setStatus("Initializing...");
+        const result = await PotataBridge.initFolder();
+        setPath(result.path);
+        await scanMods(result.path);
+        setStatus(null);
+      } catch (err) {
+        console.error("Init failed", err);
+        setStatus("Setup Required");
+      }
+    };
+    init();
+  }, []);
 
   const handlePickApk = async () => {
     try {
