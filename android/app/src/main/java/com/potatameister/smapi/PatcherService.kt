@@ -17,7 +17,7 @@ class PatcherService(private val context: Context) {
         
         val workspace = File(context.externalCacheDir, "patch_workspace")
         if (workspace.exists()) workspace.deleteRecursively()
-        workspace.mkdirs()
+        if (!workspace.mkdirs()) throw Exception("Failed to create workspace directory")
 
         val originalApkFile = File(workspace, "base_game.apk")
         val decompiledDir = File(workspace, "decompiled")
@@ -25,22 +25,38 @@ class PatcherService(private val context: Context) {
         val signedApk = File(workspace, "modded_stardew.apk")
 
         // 0. Copy APK
-        if (originalApkPath.startsWith("content://")) {
-            copyUriToFile(Uri.parse(originalApkPath), originalApkFile)
-        } else {
-            File(originalApkPath).copyTo(originalApkFile, true)
+        try {
+            if (originalApkPath.startsWith("content://")) {
+                copyUriToFile(Uri.parse(originalApkPath), originalApkFile)
+            } else {
+                File(originalApkPath).copyTo(originalApkFile, true)
+            }
+        } catch (e: Exception) {
+            throw Exception("Failed to copy source APK: ${e.message}")
         }
 
         // 1. Decompile
-        runCommand(listOf("apktool", "d", originalApkFile.absolutePath, "-o", decompiledDir.absolutePath, "-f"))
+        try {
+            runCommand(listOf("apktool", "d", originalApkFile.absolutePath, "-o", decompiledDir.absolutePath, "-f"))
+        } catch (e: Exception) {
+            throw Exception("Decompile failed: ${e.message}")
+        }
         
         // 2. Hook & Inject
-        injectSmaliHook(decompiledDir)
-        injectSmapiNativeSmali(decompiledDir)
-        injectSmapiCore(decompiledDir)
+        try {
+            injectSmaliHook(decompiledDir)
+            injectSmapiNativeSmali(decompiledDir)
+            injectSmapiCore(decompiledDir)
+        } catch (e: Exception) {
+            throw Exception("Injection failed: ${e.message}")
+        }
         
         // 3. Rebuild & Sign
-        runCommand(listOf("apktool", "b", decompiledDir.absolutePath, "-o", unsignedApk.absolutePath))
+        try {
+            runCommand(listOf("apktool", "b", decompiledDir.absolutePath, "-o", unsignedApk.absolutePath))
+        } catch (e: Exception) {
+            throw Exception("Rebuild failed: ${e.message}")
+        }
         
         // Finalize
         if (unsignedApk.renameTo(signedApk)) {
@@ -51,23 +67,9 @@ class PatcherService(private val context: Context) {
         }
     }
 
-    private fun installApk(file: File) {
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
-    }
-
     private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
-        if (!smapiDir.exists()) smapiDir.mkdirs()
+        if (!sapiDir.exists() && !sapiDir.mkdirs()) throw Exception("Failed to create smapi dex directory")
         
         val smaliCode = ".class public Lcom/potatameister/smapi/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
@@ -89,19 +91,19 @@ class PatcherService(private val context: Context) {
             entrySmali = File(decompiledDir, "smali_classes2/com/chucklefish/stardewvalley/StardewValley.smali")
         }
         
-        if (entrySmali.exists()) {
-            val lines = entrySmali.readLines()
-            val output = StringBuilder()
-            var hooked = false
-            for (line in lines) {
-                output.append(line).append("\n")
-                if (!hooked && line.contains("onCreate(Landroid/os/Bundle;)V")) {
-                    output.append("    invoke-static {}, Lcom/potatameister/smapi/SmapiNative;->init()V\n")
-                    hooked = true
-                }
+        if (!entrySmali.exists()) throw Exception("Entry point smali not found")
+
+        val lines = entrySmali.readLines()
+        val output = StringBuilder()
+        var hooked = false
+        for (line in lines) {
+            output.append(line).append("\n")
+            if (!hooked && line.contains("onCreate(Landroid/os/Bundle;)V")) {
+                output.append("    invoke-static {}, Lcom/potatameister/smapi/SmapiNative;->init()V\n")
+                hooked = true
             }
-            entrySmali.writeText(output.toString())
         }
+        entrySmali.writeText(output.toString())
     }
 
     private fun injectSmapiCore(decompiledDir: File) {
@@ -109,33 +111,47 @@ class PatcherService(private val context: Context) {
         if (!assemblyDir.exists()) {
             assemblyDir = File(decompiledDir, "assets/assemblies")
         }
-        if (!assemblyDir.exists()) assemblyDir.mkdirs()
+        if (!assemblyDir.exists() && !assemblyDir.mkdirs()) throw Exception("Failed to create assembly directory")
             
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
     }
 
     private fun runCommand(cmd: List<String>) {
-        try {
-            val process = ProcessBuilder(cmd).start()
-            process.waitFor()
-        } catch (e: Exception) {
-            Log.e(TAG, "Command failed: ${cmd.joinToString(" ")}", e)
+        val process = ProcessBuilder(cmd)
+            .redirectErrorStream(true)
+            .start()
+        
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        val exitCode = process.waitFor()
+        
+        if (exitCode != 0) {
+            throw Exception("Command '${cmd[0]}' failed with code $exitCode: ${output.take(100)}...")
         }
+    }
+
+    private fun installApk(file: File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
     }
 
     private fun copyUriToFile(uri: Uri, outFile: File) {
         context.contentResolver.openInputStream(uri)?.use { input ->
             outFile.outputStream().use { output -> input.copyTo(output) }
-        }
+        } ?: throw Exception("Failed to open input stream for URI")
     }
 
     private fun copyAssetToFile(assetName: String, outFile: File) {
-        try {
-            context.assets.open(assetName).use { input ->
-                outFile.outputStream().use { output -> input.copyTo(output) }
-            }
-        } catch (e: Exception) {
-            outFile.createNewFile()
+        context.assets.open(assetName).use { input ->
+            outFile.outputStream().use { output -> input.copyTo(output) }
         }
     }
 }

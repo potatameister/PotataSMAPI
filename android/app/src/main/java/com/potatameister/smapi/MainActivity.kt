@@ -171,7 +171,8 @@ class MainActivity : ComponentActivity() {
                                             isPatched = true
                                             statusText = "Surgery Successful!"
                                         } catch (e: Exception) {
-                                            statusText = "Surgery Failed!"
+                                            statusText = "Surgery Failed: ${e.message}"
+                                            Log.e("Potata", "Surgery Error", e)
                                         } finally { isPatching = false }
                                     }
                                 }
