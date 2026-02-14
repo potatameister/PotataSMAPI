@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -44,7 +46,12 @@ class MainActivity : ComponentActivity() {
             if (!Environment.isExternalStorageManager()) {
                 val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
                 intent.data = Uri.parse("package:$packageName")
-                manageStorageLauncher.launch(intent)
+                try {
+                    manageStorageLauncher.launch(intent)
+                } catch (e: Exception) {
+                    val fallback = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    manageStorageLauncher.launch(fallback)
+                }
             }
         }
         
@@ -65,6 +72,9 @@ class MainActivity : ComponentActivity() {
     fun PotataDashboard() {
         var apkPath by remember { mutableStateOf(locateStardew()) }
         var modCount by remember { mutableStateOf(0) }
+        var isPatching by remember { mutableStateOf(false) }
+        var statusText by remember { mutableStateOf<String?>(null) }
+        val scope = rememberCoroutineScope()
         
         LaunchedEffect(Unit) {
             val modsFolder = File(Environment.getExternalStorageDirectory(), "$DEFAULT_FOLDER/Mods")
@@ -97,20 +107,36 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = if (apkPath != null) "Ready to Farm" else "Game Not Found",
+                        text = statusText ?: (if (apkPath != null) "Ready to Farm" else "Game Not Found"),
                         color = Color.White,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
                     
                     Button(
-                        onClick = { /* TODO: Launch Patcher */ },
-                        enabled = apkPath != null,
+                        onClick = { 
+                            apkPath?.let { path ->
+                                isPatching = true
+                                statusText = "Digital Surgery..."
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        PatcherService(this@MainActivity).patchGame(path)
+                                        statusText = "Complete! Install new APK."
+                                    } catch (e: Exception) {
+                                        statusText = "Surgery Failed!"
+                                        Log.e("Potata", "Patch error", e)
+                                    } finally {
+                                        isPatching = false
+                                    }
+                                }
+                            }
+                        },
+                        enabled = apkPath != null && !isPatching,
                         modifier = Modifier.padding(top = 20.dp).fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                     ) {
-                        Text("PATCH & LAUNCH", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text(if (isPatching) "SURGERY..." else "PATCH & LAUNCH", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             }
