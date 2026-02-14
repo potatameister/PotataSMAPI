@@ -48,35 +48,37 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
-        sapiDir.mkdirs()
-        File(smapiDir, "SmapiNative.smali").writeText(
-            """.class public Lcom/potatameister/smapi/SmapiNative;
-.super Ljava/lang/Object;
-.source "SmapiNative.java"
+        if (!sapiDir.exists()) sapiDir.mkdirs()
+        
+        val smaliCode = ".class public Lcom/potatameister/smapi/SmapiNative;\n" +
+                ".super Ljava/lang/Object;\n" +
+                ".source \"SmapiNative.java\"\n\n" +
+                ".method public static init()V\n" +
+                "    .registers 2\n" +
+                "    const-string v0, \"SmapiNative\"\n" +
+                "    const-string v1, \"Native SMAPI Bootstrapping...\"\n" +
+                "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
+                "    return-void\n" +
+                ".end method"
 
-.method public static init()V
-    .registers 2
-    const-string v0, "SmapiNative"
-    const-string v1, "Native SMAPI Bootstrapping..."
-    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I
-    return-void
-.end method"""
-        )
+        File(smapiDir, "SmapiNative.smali").writeText(smaliCode)
     }
 
     private fun injectSmaliHook(decompiledDir: File) {
         var entrySmali = File(decompiledDir, "smali/com/chucklefish/stardewvalley/StardewValley.smali")
-        if (!entrySmali.exists()) entrySmali = File(decompiledDir, "smali_classes2/com/chucklefish/stardewvalley/StardewValley.smali")
+        if (!entrySmali.exists()) {
+            entrySmali = File(decompiledDir, "smali_classes2/com/chucklefish/stardewvalley/StardewValley.smali")
+        }
         
         if (entrySmali.exists()) {
-            val lines = entrySmali.readLines().toMutableList()
+            val lines = entrySmali.readLines()
             val output = StringBuilder()
+            var hooked = false
             for (line in lines) {
-                output.append(line).append("
-")
-                if (line.contains("onCreate(Landroid/os/Bundle;)V")) {
-                    output.append("    invoke-static {}, Lcom/potatameister/smapi/SmapiNative;->init()V
-")
+                output.append(line).append("\n")
+                if (!hooked && line.contains("onCreate(Landroid/os/Bundle;)V")) {
+                    output.append("    invoke-static {}, Lcom/potatameister/smapi/SmapiNative;->init()V\n")
+                    hooked = true
                 }
             }
             entrySmali.writeText(output.toString())
@@ -84,15 +86,22 @@ class PatcherService(private val context: Context) {
     }
 
     private fun injectSmapiCore(decompiledDir: File) {
-        val assemblyDir = File(decompiledDir, "assets/bin/Data/Managed").takeIf { it.exists() } 
-            ?: File(decompiledDir, "assets/assemblies").apply { mkdirs() }
+        var assemblyDir = File(decompiledDir, "assets/bin/Data/Managed")
+        if (!assemblyDir.exists()) {
+            assemblyDir = File(decompiledDir, "assets/assemblies")
+        }
+        if (!assemblyDir.exists()) assemblyDir.mkdirs()
             
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
     }
 
     private fun runCommand(cmd: List<String>) {
-        val process = ProcessBuilder(cmd).start()
-        process.waitFor()
+        try {
+            val process = ProcessBuilder(cmd).start()
+            process.waitFor()
+        } catch (e: Exception) {
+            Log.e(TAG, "Command failed: ${cmd.joinToString(" ")}", e)
+        }
     }
 
     private fun copyUriToFile(uri: Uri, outFile: File) {

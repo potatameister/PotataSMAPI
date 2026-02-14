@@ -1,19 +1,17 @@
 package com.potatameister.smapi
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -68,7 +66,6 @@ class MainActivity : ComponentActivity() {
         var apkPath by remember { mutableStateOf(locateStardew()) }
         var modCount by remember { mutableStateOf(0) }
         
-        // Simple mod count scanner
         LaunchedEffect(Unit) {
             val modsFolder = File(Environment.getExternalStorageDirectory(), "$DEFAULT_FOLDER/Mods")
             modCount = modsFolder.listFiles()?.count { it.isDirectory } ?: 0
@@ -86,10 +83,9 @@ class MainActivity : ComponentActivity() {
                 color = Color(0xFF4CAF50),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 16.dp)
             )
             
-            // Hero Card
             Card(
                 modifier = Modifier.fillMaxWidth().height(180.dp),
                 shape = RoundedCornerShape(24.dp),
@@ -98,7 +94,7 @@ class MainActivity : ComponentActivity() {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Alignment.Center
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Text(
                         text = if (apkPath != null) "Ready to Farm" else "Game Not Found",
@@ -108,7 +104,7 @@ class MainActivity : ComponentActivity() {
                     )
                     
                     Button(
-                        onClick = { /* Start Patching Logic */ },
+                        onClick = { /* TODO: Launch Patcher */ },
                         enabled = apkPath != null,
                         modifier = Modifier.padding(top = 20.dp).fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -121,15 +117,14 @@ class MainActivity : ComponentActivity() {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Stats Grid
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Gap(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth()) {
                 StatCard("MODS", modCount.toString(), Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(12.dp))
                 StatCard("ENGINE", "4.5.1", Modifier.weight(1f))
             }
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // Path Info
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -149,7 +144,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun RowScope.StatCard(title: String, value: String, modifier: Modifier) {
+    fun StatCard(title: String, value: String, modifier: Modifier) {
         Card(
             modifier = modifier.height(100.dp),
             shape = RoundedCornerShape(20.dp),
@@ -161,6 +156,4 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    
-    @Composable fun Gap(size: androidx.compose.ui.unit.Dp) = Spacer(modifier = Modifier.width(size))
 }
