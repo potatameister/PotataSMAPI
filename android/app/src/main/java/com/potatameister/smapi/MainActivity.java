@@ -72,6 +72,14 @@ public class MainActivity extends BridgeActivity {
         apkPickerLauncher.launch(intent);
     }
 
+    public void requestManualPermissions() {
+        String[] permissions = {
+            android.Manifest.permission.READ_EXTERNAL_STORAGE,
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+        };
+        ActivityCompat.requestPermissions(this, permissions, 200);
+    }
+
     private void handleFolderResult(Uri uri) {
         try {
             getContentResolver().takePersistableUriPermission(uri,
