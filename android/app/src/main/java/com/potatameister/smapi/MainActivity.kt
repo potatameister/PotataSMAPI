@@ -107,9 +107,9 @@ class MainActivity : ComponentActivity() {
         ) {
             Text("🥔", fontSize = 64.sp)
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Welcome to PotataSMAPI", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text("PotataSMAPI Setup", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.height(12.dp))
-            Text("To manage mods and patch the game, we need permission to access your storage.", color = Color.Gray, fontSize = 14.sp, textAlign = TextAlign.Center)
+            Text("Permission required to manage mods and patch the game files locally on your device.", color = Color.Gray, fontSize = 14.sp, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = { openPermissionSettings() },
@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
-                Text("GRANT PERMISSION", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text("ALLOW STORAGE ACCESS", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -136,8 +136,6 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             val modsFolder = File(Environment.getExternalStorageDirectory(), "$DEFAULT_FOLDER/Mods")
             modCount = modsFolder.listFiles()?.count { it.isDirectory } ?: 0
-            
-            // Check if patched APK exists in cache
             val patchedFile = File(externalCacheDir, "patch_workspace/modded_stardew.apk")
             if (patchedFile.exists()) isPatched = true
         }
@@ -155,7 +153,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = statusText ?: if (isPatched) "Game Patched!" else if (activePath != null) "Ready to Patch" else "Game Not Found",
+                        text = statusText ?: if (isPatched) "Patch Ready" else if (activePath != null) "Game Detected" else "Action Required",
                         color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
                     )
                     
@@ -164,15 +162,15 @@ class MainActivity : ComponentActivity() {
                             onClick = { 
                                 activePath?.let { path ->
                                     isPatching = true
-                                    statusText = "Performing Digital Surgery..."
+                                    statusText = "Initializing Patcher..."
                                     scope.launch(Dispatchers.IO) {
                                         try {
                                             PatcherService(this@MainActivity).patchGame(path)
                                             isPatched = true
-                                            statusText = "Surgery Successful!"
+                                            statusText = "Success!"
                                         } catch (e: Exception) {
-                                            statusText = "Surgery Failed: ${e.message}"
-                                            Log.e("Potata", "Surgery Error", e)
+                                            statusText = "Failed: ${e.message}"
+                                            Log.e("Potata", "Error", e)
                                         } finally { isPatching = false }
                                     }
                                 }
@@ -181,30 +179,36 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.padding(top = 20.dp).fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                         ) {
-                            Text(if (isPatching) "SURGERY..." else "PATCH & LAUNCH", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text(if (isPatching) "PROCESSING..." else "PATCH GAME", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
 
-                        if (!isPatching) {
-                            TextButton(onClick = { openApkPicker() }) {
-                                Text(if (manualApkPath != null) "Change Selected APK" else "Select APK Manually", color = Color.Gray, fontSize = 12.sp)
+                        if (!isPatching && autoPath != null) {
+                            OutlinedButton(
+                                onClick = { openApkPicker() },
+                                modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFF222222)))
+                            ) {
+                                Text("SELECT APK MANUALLY", color = Color.Gray, fontSize = 12.sp)
+                            }
+                        } else if (activePath == null) {
+                            Button(
+                                onClick = { openApkPicker() },
+                                modifier = Modifier.padding(top = 20.dp).fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF222222))
+                            ) {
+                                Text("SELECT APK MANUALLY", color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         }
                     } else {
                         Button(
                             onClick = { 
-                                val patchedFile = File(externalCacheDir, "patch_workspace/modded_stardew.apk")
-                                if (patchedFile.exists()) {
-                                    // PatcherService instance isn't strictly needed for install helper, but it has the context
-                                    // Or we can move install helper to a static utility later
-                                    // For now, re-trigger patch ensures the install logic runs
-                                    statusText = "Re-launching installer..."
-                                    scope.launch(Dispatchers.IO) { PatcherService(this@MainActivity).patchGame(activePath!!) }
-                                }
+                                scope.launch(Dispatchers.IO) { PatcherService(this@MainActivity).patchGame(activePath!!) }
                             },
                             modifier = Modifier.padding(top = 20.dp).fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                         ) {
-                            Text("INSTALL MODDED GAME", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("INSTALL APK", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                         
                         TextButton(onClick = { 
@@ -212,34 +216,29 @@ class MainActivity : ComponentActivity() {
                             isPatched = false
                             statusText = null
                         }) {
-                            Text("Reset Patch", color = Color.Red.copy(alpha = 0.6f), fontSize = 12.sp)
+                            Text("RESET WORKSPACE", color = Color.Red.copy(alpha = 0.6f), fontSize = 12.sp)
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Quick How-To
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatCard("MODS DETECTED", modCount.toString(), Modifier.weight(1f))
+                StatCard("SMAPI VERSION", "4.5.1", Modifier.weight(1f))
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0F0F0F))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("QUICK GUIDE", color = Color(0xFF4CAF50), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Text("1. Grant storage permission.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-                    Text("2. Click Patch & Launch to clone the game.", color = Color.Gray, fontSize = 11.sp)
-                    Text("3. Install the modded APK when prompted.", color = Color.Gray, fontSize = 11.sp)
-                    Text("4. Put mods in /sdcard/$DEFAULT_FOLDER/Mods", color = Color.Gray, fontSize = 11.sp)
+                    Text("FOLDER: /sdcard/$DEFAULT_FOLDER", color = Color.DarkGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard("MODS", modCount.toString(), Modifier.weight(1f))
-                StatCard("ENGINE", "4.5.1", Modifier.weight(1f))
             }
         }
     }
@@ -248,7 +247,7 @@ class MainActivity : ComponentActivity() {
     fun StatCard(title: String, value: String, modifier: Modifier) {
         Card(modifier = modifier.height(80.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF141414))) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(title, color = Color.Gray, fontSize = 10.sp)
+                Text(title, color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 Text(value, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
         }

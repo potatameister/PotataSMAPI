@@ -8,12 +8,15 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.FileWriter
 import java.util.Scanner
+import brut.androlib.ApkDecoder
+import brut.androlib.Androlib
+import brut.androlib.options.BuildOptions
 
 class PatcherService(private val context: Context) {
     private val TAG = "PotataPatcher"
 
     fun patchGame(originalApkPath: String) {
-        Log.d(TAG, "Starting native digital surgery for: $originalApkPath")
+        Log.d(TAG, "Starting library-based digital surgery for: $originalApkPath")
         
         val workspace = File(context.externalCacheDir, "patch_workspace")
         if (workspace.exists()) workspace.deleteRecursively()
@@ -32,12 +35,15 @@ class PatcherService(private val context: Context) {
                 File(originalApkPath).copyTo(originalApkFile, true)
             }
         } catch (e: Exception) {
-            throw Exception("Failed to copy source APK: ${e.message}")
+            throw Exception("Copy failed: ${e.message}")
         }
 
-        // 1. Decompile
+        // 1. Decompile using Apktool Lib
         try {
-            runCommand(listOf("apktool", "d", originalApkFile.absolutePath, "-o", decompiledDir.absolutePath, "-f"))
+            val decoder = ApkDecoder()
+            decoder.setOutDir(decompiledDir)
+            decoder.setApkFile(originalApkFile)
+            decoder.decode()
         } catch (e: Exception) {
             throw Exception("Decompile failed: ${e.message}")
         }
@@ -51,9 +57,10 @@ class PatcherService(private val context: Context) {
             throw Exception("Injection failed: ${e.message}")
         }
         
-        // 3. Rebuild & Sign
+        // 3. Rebuild using Apktool Lib
         try {
-            runCommand(listOf("apktool", "b", decompiledDir.absolutePath, "-o", unsignedApk.absolutePath))
+            val builder = Androlib(BuildOptions(), null)
+            builder.build(decompiledDir, unsignedApk)
         } catch (e: Exception) {
             throw Exception("Rebuild failed: ${e.message}")
         }
@@ -69,7 +76,7 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
-        if (!smapiDir.exists() && !smapiDir.mkdirs()) throw Exception("Failed to create smapi dex directory")
+        if (!smapiDir.exists() && !smapiDir.mkdirs()) throw Exception("Failed to create smapi directory")
         
         val smaliCode = ".class public Lcom/potatameister/smapi/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
@@ -77,7 +84,7 @@ class PatcherService(private val context: Context) {
                 ".method public static init()V\n" +
                 "    .registers 2\n" +
                 "    const-string v0, \"SmapiNative\"\n" +
-                "    const-string v1, \"Native SMAPI Bootstrapping...\"\n" +
+                "    const-string v1, \"SMAPI Bootstrapping from Lib...\"\n" +
                 "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
                 "    return-void\n" +
                 ".end method"
@@ -114,19 +121,6 @@ class PatcherService(private val context: Context) {
         if (!assemblyDir.exists() && !assemblyDir.mkdirs()) throw Exception("Failed to create assembly directory")
             
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
-    }
-
-    private fun runCommand(cmd: List<String>) {
-        val process = ProcessBuilder(cmd)
-            .redirectErrorStream(true)
-            .start()
-        
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        val exitCode = process.waitFor()
-        
-        if (exitCode != 0) {
-            throw Exception("Command '${cmd[0]}' failed with code $exitCode: ${output.take(100)}...")
-        }
     }
 
     private fun installApk(file: File) {
