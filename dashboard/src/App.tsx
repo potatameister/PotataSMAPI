@@ -10,20 +10,112 @@ function App() {
   const [isPatching, setIsPatching] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
-  // ... (auto-load code remains the same)
+  useEffect(() => {
+    const loadSavedPath = async () => {
+      try {
+        const result = await PotataBridge.getSavedFolder();
+        if (result.path) {
+          setPath(result.path);
+          const modResult = await PotataBridge.getMods({ uri: result.path });
+          setMods(modResult.mods);
+        }
+      } catch (err) {
+        console.error("Auto-load failed", err);
+      }
+    };
+    loadSavedPath();
+  }, []);
+
+  const handlePickFolder = async () => {
+    try {
+      setStatus("Opening Picker...");
+      const result = await PotataBridge.pickFolder();
+      if (result.path) {
+        setPath(result.path);
+        setStatus("Scanning for mods...");
+        const modResult = await PotataBridge.getMods({ uri: result.path });
+        setMods(modResult.mods);
+        setStatus(null);
+      } else {
+        setStatus(null);
+      }
+    } catch (err) {
+      console.error("Failed to pick folder", err);
+      setStatus("Picker Failed");
+    }
+  };
+
+  const handlePickApk = async () => {
+    try {
+      const result = await PotataBridge.pickApk();
+      setApkPath(result.path);
+    } catch (err) {
+      console.error("Failed to pick APK", err);
+    }
+  };
 
   const handleManualPath = async () => {
     if (!manualPath) return;
     setPath(manualPath);
-    // Note: Manual path might need permission handling, but it's a good UI fallback
     setStatus("Using manual path. Mods will be scanned.");
-    const modResult = await PotataBridge.getMods({ uri: manualPath });
-    setMods(modResult.mods);
+    try {
+      const modResult = await PotataBridge.getMods({ uri: manualPath });
+      setMods(modResult.mods);
+    } catch (err) {
+      console.error("Manual scan failed", err);
+    }
+  };
+
+  const handleLaunch = async () => {
+    if (!path || !apkPath) return;
+    setIsPatching(true);
+    setStatus("Starting Digital Surgery...");
+    try {
+      await PotataBridge.startPatching({ path: apkPath });
+      setStatus("Patching Complete! Please install the modded APK.");
+    } catch (err) {
+      setStatus("Patching Failed. Check logs.");
+    } finally {
+      setIsPatching(false);
+    }
+  };
+
+  const handleReset = () => {
+    setPath(null);
+    setApkPath(null);
+    setManualPath('');
+    setMods([]);
+    setStatus(null);
   };
 
   return (
     <div className='dashboard'>
-      {/* ... Hero Card remains the same */}
+      {/* Main Status & Play */}
+      <div className='bento-card hero'>
+        <h3>Stardew Valley</h3>
+        <h2>{status || (path ? (apkPath ? 'Ready to Farm' : 'APK Required') : 'Setup Required')}</h2>
+        {!path && (
+          <p style={{ fontSize: '0.7rem', color: '#ffcc00', marginTop: '4px' }}>
+            Tip: Create a NEW folder (e.g. 'StardewMods') to bypass Android restrictions.
+          </p>
+        )}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+          {!path ? (
+            <button className='play-button' onClick={handlePickFolder}>1. Set Folder</button>
+          ) : !apkPath ? (
+            <button className='play-button' onClick={handlePickApk}>2. Select Game APK</button>
+          ) : (
+            <button 
+              className='play-button' 
+              onClick={handleLaunch} 
+              disabled={isPatching}
+              style={{ opacity: isPatching ? 0.5 : 1 }}
+            >
+              {isPatching ? 'Patching...' : '3. Patch & Launch'}
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Mod Manager */}
       <div className='bento-card mod-count'>
