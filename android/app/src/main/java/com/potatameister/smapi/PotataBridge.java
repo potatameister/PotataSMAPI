@@ -60,9 +60,13 @@ public class PotataBridge extends Plugin {
     public void startPatching(PluginCall call) {
         String apkPath = call.getString("path");
         PatcherService patcher = new PatcherService(getContext());
-        boolean success = patcher.patchGame(apkPath);
-        JSObject ret = new JSObject();
-        ret.put("success", success);
-        call.resolve(ret);
+        try {
+            patcher.patchGame(apkPath);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage());
+        }
     }
 }

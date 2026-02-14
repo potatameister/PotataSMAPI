@@ -52,9 +52,8 @@ function App() {
     try {
       const res = await PotataBridge.startPatching({ path: apkPath });
       if (res.success) setStatus("Complete! Please install the new APK.");
-      else setStatus("Patching failed. Check logs.");
-    } catch (err) {
-      setStatus("Error during surgery.");
+    } catch (err: any) {
+      setStatus("Patching failed: " + (err.message || err));
     } finally {
       setIsPatching(false);
     }

@@ -20,46 +20,40 @@ public class PatcherService {
         this.context = context;
     }
 
-    public boolean patchGame(String originalApkUri) {
+    public void patchGame(String originalApkUri) throws Exception {
         Log.d(TAG, "Starting digital surgery for: " + originalApkUri);
         
-        try {
-            File workspace = new File(context.getExternalFilesDir(null), "patch_workspace");
-            if (workspace.exists()) deleteRecursive(workspace);
-            workspace.mkdirs();
+        File workspace = new File(context.getExternalFilesDir(null), "patch_workspace");
+        if (workspace.exists()) deleteRecursive(workspace);
+        workspace.mkdirs();
 
-            File originalApkFile = new File(workspace, "base_game.apk");
-            File decompiledDir = new File(workspace, "decompiled");
-            File unsignedApk = new File(workspace, "unsigned.apk");
-            File signedApk = new File(workspace, "modded_stardew.apk");
+        File originalApkFile = new File(workspace, "base_game.apk");
+        File decompiledDir = new File(workspace, "decompiled");
+        File unsignedApk = new File(workspace, "unsigned.apk");
+        File signedApk = new File(workspace, "modded_stardew.apk");
 
-            // 0. Copy APK to Workspace
-            copyUriToFile(Uri.parse(originalApkUri), originalApkFile);
+        // 0. Copy APK to Workspace
+        copyUriToFile(Uri.parse(originalApkUri), originalApkFile);
 
-            // 1. Decompile
-            runApktoolDecompile(originalApkFile, decompiledDir);
-            
-            // 2. Inject Smali Hook (The Call)
-            injectSmaliHook(decompiledDir);
-            
-            // 3. Inject SmapiNative Class (The Bridge)
-            injectSmapiNativeSmali(decompiledDir);
-            
-            // 4. Inject SMAPI DLLs
-            injectSmapiCore(decompiledDir);
-            
-            // 5. Rebuild
-            runApktoolBuild(decompiledDir, unsignedApk);
-            
-            // 6. Sign
-            signApk(unsignedApk, signedApk);
-            
-            Log.d(TAG, "Surgery Successful! Modded APK ready.");
-            return true;
-        } catch (Exception e) {
-            Log.e(TAG, "Surgery failed", e);
-            return false;
-        }
+        // 1. Decompile
+        runApktoolDecompile(originalApkFile, decompiledDir);
+        
+        // 2. Inject Smali Hook (The Call)
+        injectSmaliHook(decompiledDir);
+        
+        // 3. Inject SmapiNative Class (The Bridge)
+        injectSmapiNativeSmali(decompiledDir);
+        
+        // 4. Inject SMAPI DLLs
+        injectSmapiCore(decompiledDir);
+        
+        // 5. Rebuild
+        runApktoolBuild(decompiledDir, unsignedApk);
+        
+        // 6. Sign
+        signApk(unsignedApk, signedApk);
+        
+        Log.d(TAG, "Surgery Successful! Modded APK ready.");
     }
 
     private void injectSmapiNativeSmali(File decompiledDir) throws Exception {
