@@ -33,7 +33,17 @@ public class PatcherService {
         File signedApk = new File(workspace, "modded_stardew.apk");
 
         // 0. Copy APK to Workspace
-        copyUriToFile(Uri.parse(originalApkUri), originalApkFile);
+        Log.d(TAG, "Copying APK to workspace...");
+        if (originalApkUri.startsWith("content://")) {
+            copyUriToFile(Uri.parse(originalApkUri), originalApkFile);
+        } else {
+            File sourceFile = new File(originalApkUri);
+            if (sourceFile.exists()) {
+                copyFile(sourceFile, originalApkFile);
+            } else {
+                throw new Exception("Source APK not found at: " + originalApkUri);
+            }
+        }
 
         // 1. Decompile
         runApktoolDecompile(originalApkFile, decompiledDir);
@@ -146,6 +156,15 @@ public class PatcherService {
             byte[] buffer = new byte[4096];
             int read;
             while ((read = is.read(buffer)) != -1) fos.write(buffer, 0, read);
+        }
+    }
+
+    private void copyFile(File src, File dst) throws Exception {
+        try (java.io.FileInputStream in = new java.io.FileInputStream(src);
+             java.io.FileOutputStream out = new java.io.FileOutputStream(dst)) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
         }
     }
 
