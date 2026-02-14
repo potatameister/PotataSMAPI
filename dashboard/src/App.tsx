@@ -5,41 +5,28 @@ import PotataBridge from './bridge'
 function App() {
   const [path, setPath] = useState<string | null>(null);
   const [apkPath, setApkPath] = useState<string | null>(null);
-  const [manualPath, setManualPath] = useState('/sdcard/StardewValley');
   const [mods, setMods] = useState<string[]>([]);
   const [isPatching, setIsPatching] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const result = await PotataBridge.getSavedFolder();
-        if (result.path) {
-          setPath(result.path);
-          const modResult = await PotataBridge.getMods({ uri: result.path });
-          setMods(modResult.mods);
-        }
-      } catch (err) {
-        console.error("Auto-load failed", err);
-      }
-    };
-    init();
-  }, []);
-
-  const handlePickFolder = async () => {
+  const scanMods = async (folderPath: string) => {
     try {
-      setStatus("Opening Picker...");
-      const result = await PotataBridge.pickFolder();
-      if (result.path) {
-        setPath(result.path);
-        const modResult = await PotataBridge.getMods({ uri: result.path });
-        setMods(modResult.mods);
-        setStatus(null);
-      } else {
-        setStatus(null);
-      }
+      const modResult = await PotataBridge.getMods({ uri: folderPath });
+      setMods(modResult.mods);
     } catch (err) {
-      setStatus("Picker Failed - Use Manual Path");
+      console.error("Scan failed", err);
+    }
+  };
+
+  const handleInit = async () => {
+    try {
+      setStatus("Initializing folder...");
+      const result = await PotataBridge.initFolder();
+      setPath(result.path);
+      await scanMods(result.path);
+      setStatus(null);
+    } catch (err) {
+      setStatus("Initialization failed - Check permissions");
     }
   };
 
@@ -49,18 +36,6 @@ function App() {
       setApkPath(result.path);
     } catch (err) {
       console.error("Failed to pick APK", err);
-    }
-  };
-
-  const handleManualPath = async () => {
-    if (!manualPath) return;
-    setPath(manualPath);
-    try {
-      const modResult = await PotataBridge.getMods({ uri: manualPath });
-      setMods(modResult.mods);
-      setStatus(null);
-    } catch (err) {
-      setStatus("Manual Path Failed");
     }
   };
 
@@ -78,24 +53,17 @@ function App() {
     }
   };
 
-  const handleReset = () => {
-    setPath(null);
-    setApkPath(null);
-    setMods([]);
-    setStatus(null);
-  };
-
   return (
     <div className='dashboard'>
       <div className='bento-card hero'>
         <h3>PotataSMAPI</h3>
-        <h2>{status || (path ? (apkPath ? 'Ready' : 'APK Required') : 'Setup Required')}</h2>
+        <h2>{status || (path ? (apkPath ? 'Ready to Farm' : 'APK Required') : 'Setup Required')}</h2>
         
         <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
           {!path ? (
-            <button className='play-button' onClick={handlePickFolder}>1. Set Folder</button>
+            <button className='play-button' onClick={handleInit}>1. Initialize</button>
           ) : !apkPath ? (
-            <button className='play-button' onClick={handlePickApk}>2. Select APK</button>
+            <button className='play-button' onClick={handlePickApk}>2. Select Game APK</button>
           ) : (
             <button className='play-button' onClick={handleLaunch} disabled={isPatching}>
               {isPatching ? 'Patching...' : '3. Patch & Launch'}
@@ -107,18 +75,8 @@ function App() {
       <div className='bento-card mod-count'>
         <h3>Mods</h3>
         <h2>{mods.length}</h2>
-        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '4px' }}>
-          {path ? mods.join(', ') : (
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <input 
-                type="text" 
-                value={manualPath}
-                onChange={(e) => setManualPath(e.target.value)}
-                style={{ background: '#222', border: '1px solid #444', color: 'white', flex: 1, fontSize: '0.7rem' }}
-              />
-              <button onClick={handleManualPath} style={{ fontSize: '0.7rem' }}>Set</button>
-            </div>
-          )}
+        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '4px', maxHeight: '100px', overflowY: 'auto' }}>
+          {path ? (mods.length > 0 ? mods.join(', ') : 'No mods found') : 'Initializing required'}
         </div>
       </div>
 
@@ -132,11 +90,8 @@ function App() {
       </div>
 
       <div className='bento-card logs' style={{ gridColumn: 'span 2' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <h3>Path</h3>
-          {path && <button onClick={handleReset} style={{ fontSize: '0.6rem' }}>Reset</button>}
-        </div>
-        <p style={{ fontSize: '0.6rem', wordBreak: 'break-all', opacity: 0.6 }}>{path || 'No folder set'}</p>
+        <h3>Work Directory</h3>
+        <p style={{ fontSize: '0.6rem', wordBreak: 'break-all', opacity: 0.6 }}>{path || 'Not initialized'}</p>
       </div>
     </div>
   )

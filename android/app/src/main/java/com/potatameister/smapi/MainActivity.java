@@ -2,36 +2,28 @@ package com.potatameister.smapi;
 
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.Settings;
 import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import java.io.File;
 
 public class MainActivity extends BridgeActivity {
-    private static final String PREFS_NAME = "PotataPrefs";
-    private static final String KEY_FOLDER_URI = "folder_uri";
-
-    private ActivityResultLauncher<Intent> folderPickerLauncher;
+    private static final String DEFAULT_FOLDER_NAME = "PotataSMAPI";
     private ActivityResultLauncher<Intent> apkPickerLauncher;
+    private ActivityResultLauncher<Intent> manageStorageLauncher;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(PotataBridge.class);
         super.onCreate(savedInstanceState);
-
-        folderPickerLauncher = registerForActivityResult(
-            new ActivityResultContracts.StartActivityForResult(),
-            result -> {
-                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                    handleFolderResult(result.getData().getData());
-                }
-            }
-        );
 
         apkPickerLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
@@ -41,14 +33,31 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         );
+
+        manageStorageLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> checkAndInitFolder()
+        );
     }
 
-    public void openFolderPicker() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        folderPickerLauncher.launch(intent);
+    public void checkAndInitFolder() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                intent.setData(Uri.parse("package:" + getPackageName()));
+                manageStorageLauncher.launch(intent);
+                return;
+            }
+        }
+
+        // Create the PotataSMAPI folder automatically
+        File root = new File(Environment.getExternalStorageDirectory(), DEFAULT_FOLDER_NAME);
+        File mods = new File(root, "Mods");
+        
+        if (!root.exists()) root.mkdirs();
+        if (!mods.exists()) mods.mkdirs();
+
+        Toast.makeText(this, "Folder Ready: /sdcard/" + DEFAULT_FOLDER_NAME, Toast.LENGTH_SHORT).show();
     }
 
     public void openApkPicker() {
@@ -58,24 +67,8 @@ public class MainActivity extends BridgeActivity {
         apkPickerLauncher.launch(intent);
     }
 
-    private void handleFolderResult(Uri uri) {
-        try {
-            getContentResolver().takePersistableUriPermission(uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-
-            SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
-            editor.putString(KEY_FOLDER_URI, uri.toString());
-            editor.apply();
-
-            resolveBridgeCall("PotataBridge", uri.toString());
-        } catch (Exception e) {
-            Toast.makeText(this, "Permission persistence failed", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    public String getSavedFolderUri() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_FOLDER_URI, null);
+    public String getDefaultPath() {
+        return new File(Environment.getExternalStorageDirectory(), DEFAULT_FOLDER_NAME).getAbsolutePath();
     }
 
     private void resolveBridgeCall(String pluginName, String resultPath) {
