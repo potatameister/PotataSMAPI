@@ -10,7 +10,7 @@ import java.io.FileWriter
 import java.util.Scanner
 import brut.androlib.ApkDecoder
 import brut.androlib.Androlib
-import brut.androlib.options.BuildOptions
+import brut.androlib.Config
 
 class PatcherService(private val context: Context) {
     private val TAG = "PotataPatcher"
@@ -40,10 +40,9 @@ class PatcherService(private val context: Context) {
 
         // 1. Decompile using Apktool Lib
         try {
-            val decoder = ApkDecoder()
-            decoder.setOutDir(decompiledDir)
-            decoder.setApkFile(originalApkFile)
-            decoder.decode()
+            val config = Config()
+            val decoder = ApkDecoder(originalApkFile, config)
+            decoder.decode(decompiledDir)
         } catch (e: Exception) {
             throw Exception("Decompile failed: ${e.message}")
         }
@@ -59,7 +58,8 @@ class PatcherService(private val context: Context) {
         
         // 3. Rebuild using Apktool Lib
         try {
-            val builder = Androlib(BuildOptions(), null)
+            val config = Config()
+            val builder = Androlib(config)
             builder.build(decompiledDir, unsignedApk)
         } catch (e: Exception) {
             throw Exception("Rebuild failed: ${e.message}")
@@ -76,7 +76,7 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
-        if (!smapiDir.exists() && !smapiDir.mkdirs()) throw Exception("Failed to create smapi directory")
+        if (!sapiDir.exists() && !sapiDir.mkdirs()) throw Exception("Failed to create smapi directory")
         
         val smaliCode = ".class public Lcom/potatameister/smapi/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
@@ -89,7 +89,7 @@ class PatcherService(private val context: Context) {
                 "    return-void\n" +
                 ".end method"
 
-        File(smapiDir, "SmapiNative.smali").writeText(smaliCode)
+        File(sapiDir, "SmapiNative.smali").writeText(smaliCode)
     }
 
     private fun injectSmaliHook(decompiledDir: File) {
@@ -118,7 +118,7 @@ class PatcherService(private val context: Context) {
         if (!assemblyDir.exists()) {
             assemblyDir = File(decompiledDir, "assets/assemblies")
         }
-        if (!assemblyDir.exists() && !assemblyDir.mkdirs()) throw Exception("Failed to create assembly directory")
+        if (!assemblyDir.exists()) assemblyDir.mkdirs()
             
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
     }
