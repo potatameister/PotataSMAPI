@@ -1,6 +1,7 @@
 package com.potatameister.smapi
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import java.io.File
