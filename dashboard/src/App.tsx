@@ -5,54 +5,42 @@ import PotataBridge from './bridge'
 function App() {
   const [path, setPath] = useState<string | null>(null);
   const [apkPath, setApkPath] = useState<string | null>(null);
-  const [manualPath, setManualPath] = useState('');
+  const [manualPath, setManualPath] = useState('/sdcard/StardewValley');
   const [mods, setMods] = useState<string[]>([]);
   const [isPatching, setIsPatching] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [hasPermission, setHasPermission] = useState(true);
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const perm = await PotataBridge.checkPermissions();
-        setHasPermission(perm.granted);
+  // ... (useEffect remains the same)
 
-        const result = await PotataBridge.getSavedFolder();
-        if (result.path) {
-          setPath(result.path);
-          const modResult = await PotataBridge.getMods({ uri: result.path });
-          setMods(modResult.mods);
-        }
-      } catch (err) {
-        console.error("Init failed", err);
-      }
-    };
-    init();
-  }, []);
-
-  const handleGrantPermission = async () => {
-    await PotataBridge.requestManualPermissions();
-    // After returning from settings, the user should restart or we can re-check
-    const perm = await PotataBridge.checkPermissions();
-    setHasPermission(perm.granted);
+  const handleUseDefault = async () => {
+    try {
+      setStatus("Checking Permissions...");
+      await PotataBridge.requestManualPermissions();
+      
+      setPath(manualPath);
+      setStatus("Scanning mods...");
+      const modResult = await PotataBridge.getMods({ uri: manualPath });
+      setMods(modResult.mods);
+      setStatus(null);
+    } catch (err) {
+      setStatus("Access Denied - Grant Permission First");
+    }
   };
 
   const handlePickFolder = async () => {
+    // Keep this as a backup
     try {
       setStatus("Opening Picker...");
       const result = await PotataBridge.pickFolder();
       if (result.path) {
         setPath(result.path);
-        setStatus("Scanning for mods...");
         const modResult = await PotataBridge.getMods({ uri: result.path });
         setMods(modResult.mods);
         setStatus(null);
-      } else {
-        setStatus(null);
       }
     } catch (err) {
-      console.error("Failed to pick folder", err);
-      setStatus("Picker Failed");
+      setStatus("Picker Failed - Use Default Path");
     }
   };
 
@@ -124,9 +112,12 @@ function App() {
             Tip: Create a NEW folder (e.g. 'StardewMods') to bypass Android restrictions.
           </p>
         )}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
           {!path ? (
-            <button className='play-button' onClick={handlePickFolder}>1. Set Folder</button>
+            <>
+              <button className='play-button' onClick={handleUseDefault}>1. Use Default Path</button>
+              <button className='play-button' style={{ background: '#444', color: 'white' }} onClick={handlePickFolder}>Custom...</button>
+            </>
           ) : !apkPath ? (
             <button className='play-button' onClick={handlePickApk}>2. Select Game APK</button>
           ) : (
