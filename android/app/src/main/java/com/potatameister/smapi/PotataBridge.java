@@ -82,11 +82,4 @@ public class PotataBridge extends Plugin {
         MainActivity activity = (MainActivity) getActivity();
         activity.openApkPicker();
     }
-
-    @PluginMethod
-    public void requestPermissions(PluginCall call) {
-        MainActivity activity = (MainActivity) getActivity();
-        activity.requestAllPermissions();
-        call.resolve();
-    }
 }
