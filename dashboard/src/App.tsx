@@ -67,18 +67,40 @@ function App() {
         <h3>PotataSMAPI</h3>
         <h2>{status || (apkPath ? 'Ready to Farm' : 'Game Not Found')}</h2>
         
-        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-          {!apkPath ? (
-            <button className='play-button' onClick={handlePickApk}>Select APK Manually</button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+          {apkPath ? (
+            <>
+              <button 
+                className='play-button' 
+                onClick={handleLaunch} 
+                disabled={isPatching}
+                style={{ opacity: isPatching ? 0.5 : 1 }}
+              >
+                {isPatching ? 'Patching...' : 'Patch & Launch'}
+              </button>
+              <button 
+                className='play-button' 
+                style={{ background: '#444', color: 'white' }} 
+                onClick={handlePickApk}
+              >
+                Change APK
+              </button>
+            </>
           ) : (
-            <button 
-              className='play-button' 
-              onClick={handleLaunch} 
-              disabled={isPatching}
-              style={{ opacity: isPatching ? 0.5 : 1 }}
-            >
-              {isPatching ? 'Patching...' : 'Patch & Launch'}
-            </button>
+            <>
+              <button className='play-button' onClick={handlePickApk}>Select APK Manually</button>
+              <button 
+                className='play-button' 
+                style={{ background: '#444', color: 'white' }} 
+                onClick={async () => {
+                  const game = await PotataBridge.autoLocateGame();
+                  if (game.path) setApkPath(game.path);
+                  else setStatus("Game not found automatically.");
+                }}
+              >
+                Retry Auto-Detect
+              </button>
+            </>
           )}
         </div>
       </div>
