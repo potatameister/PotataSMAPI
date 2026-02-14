@@ -56,13 +56,18 @@ function App() {
 
   const handleManualPath = async () => {
     if (!manualPath) return;
-    setPath(manualPath);
-    setStatus("Using manual path. Mods will be scanned.");
     try {
+      setStatus("Requesting Storage Permission...");
+      await PotataBridge.requestManualPermissions();
+      
+      setPath(manualPath);
+      setStatus("Using manual path. Scanning mods...");
       const modResult = await PotataBridge.getMods({ uri: manualPath });
       setMods(modResult.mods);
+      setStatus(null);
     } catch (err) {
       console.error("Manual scan failed", err);
+      setStatus("Manual Scan Failed - Check Permissions");
     }
   };
 
