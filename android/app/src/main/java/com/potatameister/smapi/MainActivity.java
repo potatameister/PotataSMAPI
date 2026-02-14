@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -24,7 +25,6 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PotataBridge.class);
         super.onCreate(savedInstanceState);
 
-        // Initialize simplified launchers
         folderPickerLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
             result -> {
@@ -45,13 +45,24 @@ public class MainActivity extends BridgeActivity {
     }
 
     public void openFolderPicker() {
+        // This is the "Magic URI" for the primary storage root
+        Uri rootUri = Uri.parse("content://com.android.externalstorage.documents/document/primary%3A");
+        
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
-        intent.addCategory(Intent.CATEGORY_DEFAULT);
-        folderPickerLauncher.launch(intent);
+        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, rootUri);
+        
+        // We only use the absolute essential flags
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION 
+                      | Intent.FLAG_GRANT_WRITE_URI_PERMISSION 
+                      | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+
+        try {
+            folderPickerLauncher.launch(intent);
+        } catch (Exception e) {
+            // Fallback if the magic URI fails
+            Intent fallback = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            folderPickerLauncher.launch(fallback);
+        }
     }
 
     public void openApkPicker() {
@@ -72,7 +83,7 @@ public class MainActivity extends BridgeActivity {
 
             resolveBridgeCall("PotataBridge", uri.toString());
         } catch (Exception e) {
-            Toast.makeText(this, "Permission persistence failed", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Folder selection failed", Toast.LENGTH_SHORT).show();
         }
     }
 
