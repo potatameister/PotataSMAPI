@@ -81,12 +81,15 @@ public class MainActivity extends BridgeActivity {
     public String locateStardewApk() {
         try {
             PackageManager pm = getPackageManager();
-            android.content.pm.ApplicationInfo ai = pm.getApplicationInfo("com.chucklefish.stardewvalley", 0);
+            ApplicationInfo ai = pm.getApplicationInfo("com.chucklefish.stardewvalley", 0);
             if (ai != null && ai.publicSourceDir != null) {
+                Log.d("Potata", "Game found at: " + ai.publicSourceDir);
                 return ai.publicSourceDir;
             }
         } catch (PackageManager.NameNotFoundException e) {
-            Log.w("Potata", "Stardew Valley not found via PM");
+            Log.e("Potata", "Stardew Valley not found. Make sure the official app is installed.");
+        } catch (Exception e) {
+            Log.e("Potata", "Error locating game: " + e.getMessage());
         }
         return null;
     }
