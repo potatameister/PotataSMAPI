@@ -6,7 +6,6 @@ import android.net.Uri
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
-import java.io.FileWriter
 import java.util.Scanner
 import brut.androlib.ApkDecoder
 import brut.androlib.Androlib
@@ -40,8 +39,8 @@ class PatcherService(private val context: Context) {
 
         // 1. Decompile using Apktool Lib
         try {
-            val config = Config()
-            val decoder = ApkDecoder(originalApkFile, config)
+            val config = Config.getDefaultConfig()
+            val decoder = ApkDecoder(config, originalApkFile)
             decoder.decode(decompiledDir)
         } catch (e: Exception) {
             throw Exception("Decompile failed: ${e.message}")
@@ -58,7 +57,7 @@ class PatcherService(private val context: Context) {
         
         // 3. Rebuild using Apktool Lib
         try {
-            val config = Config()
+            val config = Config.getDefaultConfig()
             val builder = Androlib(config)
             builder.build(decompiledDir, unsignedApk)
         } catch (e: Exception) {
@@ -76,7 +75,7 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
-        if (!sapiDir.exists() && !sapiDir.mkdirs()) throw Exception("Failed to create smapi directory")
+        if (!smapiDir.exists() && !smapiDir.mkdirs()) throw Exception("Failed to create smapi directory")
         
         val smaliCode = ".class public Lcom/potatameister/smapi/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
@@ -89,7 +88,7 @@ class PatcherService(private val context: Context) {
                 "    return-void\n" +
                 ".end method"
 
-        File(sapiDir, "SmapiNative.smali").writeText(smaliCode)
+        File(smapiDir, "SmapiNative.smali").writeText(smaliCode)
     }
 
     private fun injectSmaliHook(decompiledDir: File) {
