@@ -49,6 +49,8 @@ public class MainActivity extends BridgeActivity {
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
+        intent.addCategory(Intent.CATEGORY_DEFAULT);
         folderPickerLauncher.launch(intent);
     }
 
