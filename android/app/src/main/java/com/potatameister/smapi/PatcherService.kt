@@ -42,8 +42,26 @@ class PatcherService(private val context: Context) {
         runCommand(listOf("apktool", "b", decompiledDir.absolutePath, "-o", unsignedApk.absolutePath))
         
         // Finalize
-        unsignedApk.renameTo(signedApk)
-        Log.d(TAG, "Surgery Complete.")
+        if (unsignedApk.renameTo(signedApk)) {
+            Log.d(TAG, "Surgery Complete. Triggering installation...")
+            installApk(signedApk)
+        } else {
+            throw Exception("Failed to finalize signed APK")
+        }
+    }
+
+    private fun installApk(file: File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
     }
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {

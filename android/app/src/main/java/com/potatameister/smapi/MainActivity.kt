@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -30,34 +31,52 @@ class MainActivity : ComponentActivity() {
     
     private val manageStorageLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { checkAndInit() }
+    ) { checkPermissionStatus() }
+
+    private var hasPermission by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        checkAndInit()
+        checkPermissionStatus()
         
         setContent {
-            PotataDashboard()
+            if (!hasPermission) {
+                WelcomeScreen()
+            } else {
+                PotataDashboard()
+            }
         }
     }
 
-    private fun checkAndInit() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                intent.data = Uri.parse("package:$packageName")
-                try {
-                    manageStorageLauncher.launch(intent)
-                } catch (e: Exception) {
-                    val fallback = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    manageStorageLauncher.launch(fallback)
-                }
-            }
+    private fun checkPermissionStatus() {
+        hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true // Support for older versions can be added if needed
         }
         
+        if (hasPermission) {
+            initFolders()
+        }
+    }
+
+    private fun initFolders() {
         val root = File(Environment.getExternalStorageDirectory(), DEFAULT_FOLDER)
         if (!root.exists()) root.mkdirs()
         File(root, "Mods").mkdirs()
+    }
+
+    private fun openPermissionSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+            intent.data = Uri.parse("package:$packageName")
+            try {
+                manageStorageLauncher.launch(intent)
+            } catch (e: Exception) {
+                val fallback = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                manageStorageLauncher.launch(fallback)
+            }
+        }
     }
 
     private fun locateStardew(): String? {
@@ -65,6 +84,41 @@ class MainActivity : ComponentActivity() {
             packageManager.getApplicationInfo("com.chucklefish.stardewvalley", 0).publicSourceDir
         } catch (e: Exception) {
             null
+        }
+    }
+
+    @Composable
+    fun WelcomeScreen() {
+        Column(
+            modifier = Modifier.fillMaxSize().background(Color(0xFF0A0A0A)).padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("🥔", fontSize = 64.sp)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Welcome to PotataSMAPI",
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                "To manage your mods and patch the game, we need permission to access your storage.",
+                color = Color.Gray,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(
+                onClick = { openPermissionSettings() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp)
+            ) {
+                Text("GRANT PERMISSION", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
         }
     }
 
