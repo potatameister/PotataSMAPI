@@ -75,6 +75,19 @@ public class MainActivity extends BridgeActivity {
         apkPickerLauncher.launch(intent);
     }
 
+    public String locateStardewApk() {
+        try {
+            PackageManager pm = getPackageManager();
+            android.content.pm.ApplicationInfo ai = pm.getApplicationInfo("com.chucklefish.stardewvalley", 0);
+            if (ai != null && ai.publicSourceDir != null) {
+                return ai.publicSourceDir;
+            }
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.w("Potata", "Stardew Valley not found via PM");
+        }
+        return null;
+    }
+
     public String getDefaultPath() {
         return new File(Environment.getExternalStorageDirectory(), DEFAULT_FOLDER_NAME).getAbsolutePath();
     }

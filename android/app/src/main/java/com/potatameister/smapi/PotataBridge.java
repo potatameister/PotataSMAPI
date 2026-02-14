@@ -48,6 +48,15 @@ public class PotataBridge extends Plugin {
     }
 
     @PluginMethod
+    public void autoLocateGame(PluginCall call) {
+        MainActivity activity = (MainActivity) getActivity();
+        String path = activity.locateStardewApk();
+        JSObject ret = new JSObject();
+        ret.put("path", path);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
     public void startPatching(PluginCall call) {
         String apkPath = call.getString("path");
         PatcherService patcher = new PatcherService(getContext());
