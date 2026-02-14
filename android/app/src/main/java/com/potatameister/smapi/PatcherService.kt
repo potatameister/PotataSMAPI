@@ -69,7 +69,7 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
-        if (!sapiDir.exists() && !sapiDir.mkdirs()) throw Exception("Failed to create smapi dex directory")
+        if (!smapiDir.exists() && !smapiDir.mkdirs()) throw Exception("Failed to create smapi dex directory")
         
         val smaliCode = ".class public Lcom/potatameister/smapi/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
