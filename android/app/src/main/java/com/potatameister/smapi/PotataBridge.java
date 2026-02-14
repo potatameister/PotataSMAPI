@@ -1,8 +1,6 @@
 package com.potatameister.smapi;
 
-import android.content.pm.PackageManager;
 import android.net.Uri;
-import androidx.core.content.ContextCompat;
 import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -28,7 +26,6 @@ public class PotataBridge extends Plugin {
         List<String> modNames = new java.util.ArrayList<>();
 
         if (input.startsWith("content://")) {
-            // Handle SAF URI
             Uri uri = Uri.parse(input);
             DocumentFile root = DocumentFile.fromTreeUri(getContext(), uri);
             DocumentFile modsFolder = root.findFile("Mods");
@@ -38,10 +35,7 @@ public class PotataBridge extends Plugin {
                 }
             }
         } else {
-            // Handle Direct File Path (Requires All Files Access)
             File modsFolder = new File(input, "Mods");
-            if (!modsFolder.exists()) modsFolder.mkdirs();
-            
             File[] files = modsFolder.listFiles();
             if (files != null) {
                 for (File f : files) {
@@ -58,33 +52,14 @@ public class PotataBridge extends Plugin {
     }
 
     @PluginMethod
-    public void checkPermissions(PluginCall call) {
-        boolean granted = false;
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            granted = android.os.Environment.isExternalStorageManager();
-        } else {
-            granted = ContextCompat.checkSelfPermission(getContext(), android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        }
-        JSObject ret = new JSObject();
-        ret.put("granted", granted);
-        call.resolve(ret);
-    }
-
-    @PluginMethod
     public void startPatching(PluginCall call) {
         String apkPath = call.getString("path");
-        
         PatcherService patcher = new PatcherService(getContext());
         boolean success = patcher.patchGame(apkPath);
-
         JSObject ret = new JSObject();
         ret.put("success", success);
-        
-        if (success) {
-            call.resolve(ret);
-        } else {
-            call.reject("Patching failed. Check logs.");
-        }
+        if (success) call.resolve(ret);
+        else call.reject("Patching failed.");
     }
 
     @PluginMethod
@@ -108,12 +83,5 @@ public class PotataBridge extends Plugin {
         saveCall(call);
         MainActivity activity = (MainActivity) getActivity();
         activity.openApkPicker();
-    }
-
-    @PluginMethod
-    public void requestManualPermissions(PluginCall call) {
-        MainActivity activity = (MainActivity) getActivity();
-        activity.requestManualPermissions();
-        call.resolve();
     }
 }
