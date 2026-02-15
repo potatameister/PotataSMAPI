@@ -27,9 +27,14 @@
 -keep class org.yaml.snakeyaml.** { *; }
 -dontwarn org.yaml.snakeyaml.**
 
-# Ignore missing desktop GUI classes (Swing/AWT) that don't exist on Android
+# Ignore missing desktop GUI classes (Swing/AWT/ImageIO) that don't exist on Android
 -dontwarn javax.swing.**
 -dontwarn java.awt.**
+-dontwarn javax.imageio.**
+-dontwarn javax.xml.stream.**
+-dontwarn java.beans.**
+-dontwarn com.sun.source.**
+-dontwarn javax.annotation.processing.**
 
 # General reflection safety
 -keepattributes Signature,AnnotationDefault,EnclosingMethod,InnerClasses,SourceFile,LineNumberTable
