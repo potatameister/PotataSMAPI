@@ -25,6 +25,15 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
+import org.json.JSONObject
+
+data class ModInfo(
+    val folderName: String,
+    val name: String,
+    val author: String,
+    val version: String,
+    val isEnabled: Boolean
+)
 
 class MainActivity : ComponentActivity() {
     private val DEFAULT_FOLDER = "PotataSMAPI"
@@ -43,6 +52,51 @@ class MainActivity : ComponentActivity() {
 
     private var hasPermission by mutableStateOf(false)
     private var manualApkPath by mutableStateOf<String?>(null)
+    private var modList by mutableStateOf<List<ModInfo>>(emptyList())
+
+    // Stardew-inspired Palette
+    val StardewGreen = Color(0xFF4CAF50)
+    val StardewBrown = Color(0xFF5D4037)
+    val StardewGold = Color(0xFFFBC02D)
+    val StardewDark = Color(0xFF1B1B1B)
+
+    private fun loadMods() {
+        val modsFolder = File(Environment.getExternalStorageDirectory(), "$DEFAULT_FOLDER/Mods")
+        if (!modsFolder.exists()) return
+        
+        val foundMods = mutableListOf<ModInfo>()
+        modsFolder.listFiles()?.filter { it.isDirectory }?.forEach { folder ->
+            val isEnabled = !folder.name.startsWith(".")
+            val manifestFile = File(folder, "manifest.json")
+            
+            if (manifestFile.exists()) {
+                try {
+                    val json = JSONObject(manifestFile.readText())
+                    foundMods.add(ModInfo(
+                        folderName = folder.name,
+                        name = json.optString("Name", folder.name),
+                        author = json.optString("Author", "Unknown"),
+                        version = json.optString("Version", "1.0.0"),
+                        isEnabled = isEnabled
+                    ))
+                } catch (e: Exception) {
+                    foundMods.add(ModInfo(folder.name, folder.name, "Error", "0.0", isEnabled))
+                }
+            }
+        }
+        modList = foundMods.sortedBy { it.name }
+    }
+
+    private fun toggleMod(mod: ModInfo) {
+        val modsFolder = File(Environment.getExternalStorageDirectory(), "$DEFAULT_FOLDER/Mods")
+        val oldFile = File(modsFolder, mod.folderName)
+        val newName = if (mod.isEnabled) ".${mod.folderName}" else mod.folderName.removePrefix(".")
+        val newFile = File(modsFolder, newName)
+        
+        if (oldFile.renameTo(newFile)) {
+            loadMods()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,23 +155,23 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun WelcomeScreen() {
         Column(
-            modifier = Modifier.fillMaxSize().background(Color(0xFF0A0A0A)).padding(32.dp),
+            modifier = Modifier.fillMaxSize().background(StardewDark).padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("🥔", fontSize = 64.sp)
+            Text("🥔", fontSize = 80.sp)
             Spacer(modifier = Modifier.height(16.dp))
-            Text("PotataSMAPI Setup", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text("PotataSMAPI", color = StardewGold, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.height(12.dp))
-            Text("Permission required to manage mods and patch the game files locally on your device.", color = Color.Gray, fontSize = 14.sp, textAlign = TextAlign.Center)
-            Spacer(modifier = Modifier.height(32.dp))
+            Text("A modern, stable launcher for Stardew Valley mods on Android.", color = Color.Gray, fontSize = 14.sp, textAlign = TextAlign.Center)
+            Spacer(modifier = Modifier.height(48.dp))
             Button(
                 onClick = { openPermissionSettings() },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(56.dp)
+                colors = ButtonDefaults.buttonColors(containerColor = StardewGreen),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(64.dp)
             ) {
-                Text("ALLOW STORAGE ACCESS", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text("GET STARTED", color = Color.Black, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             }
         }
     }
@@ -127,33 +181,32 @@ class MainActivity : ComponentActivity() {
         val autoPath = remember { locateStardew() }
         val activePath = manualApkPath ?: autoPath
         
-        var modCount by remember { mutableStateOf(0) }
         var isPatching by remember { mutableStateOf(false) }
         var isPatched by remember { mutableStateOf(false) }
         var statusText by remember { mutableStateOf<String?>(null) }
         val scope = rememberCoroutineScope()
         
         LaunchedEffect(Unit) {
-            val modsFolder = File(Environment.getExternalStorageDirectory(), "$DEFAULT_FOLDER/Mods")
-            modCount = modsFolder.listFiles()?.count { it.isDirectory } ?: 0
+            loadMods()
             val patchedFile = File(externalCacheDir, "patch_workspace/modded_stardew.apk")
             if (patchedFile.exists()) isPatched = true
         }
 
         Column(
-            modifier = Modifier.fillMaxSize().background(Color(0xFF0A0A0A)).padding(16.dp),
+            modifier = Modifier.fillMaxSize().background(StardewDark).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("PotataSMAPI v1.0", color = Color(0xFF4CAF50), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
+            Text("PotataSMAPI v1.0", color = StardewGold, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
             
+            // Patch Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF141414))
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF252525))
             ) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = statusText ?: if (isPatched) "Patch Ready" else if (activePath != null) "Game Detected" else "Action Required",
+                        text = statusText ?: if (isPatched) "Surgery Complete" else if (activePath != null) "Game Detected" else "Action Required",
                         color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
                     )
                     
@@ -178,38 +231,20 @@ class MainActivity : ComponentActivity() {
                             },
                             enabled = activePath != null && !isPatching,
                             modifier = Modifier.padding(top = 20.dp).fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                            colors = ButtonDefaults.buttonColors(containerColor = StardewGreen)
                         ) {
-                            Text(if (isPatching) "PROCESSING..." else "PATCH GAME", color = Color.Black, fontWeight = FontWeight.Bold)
-                        }
-
-                        if (!isPatching && autoPath != null) {
-                            OutlinedButton(
-                                onClick = { openApkPicker() },
-                                modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF222222))
-                            ) {
-                                Text("SELECT APK MANUALLY", color = Color.Gray, fontSize = 12.sp)
-                            }
-                        } else if (activePath == null) {
-                            Button(
-                                onClick = { openApkPicker() },
-                                modifier = Modifier.padding(top = 20.dp).fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF222222))
-                            ) {
-                                Text("SELECT APK MANUALLY", color = Color.White, fontWeight = FontWeight.Bold)
-                            }
+                            Text(if (isPatching) "PROCESSING..." else "PERFORM SURGERY", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                     } else {
                         Button(
                             onClick = { 
+                                // Re-trigger installer
                                 scope.launch(Dispatchers.IO) { PatcherService(this@MainActivity).patchGame(activePath!!) }
                             },
                             modifier = Modifier.padding(top = 20.dp).fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                            colors = ButtonDefaults.buttonColors(containerColor = StardewGreen)
                         ) {
-                            Text("INSTALL APK", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("INSTALL MODDED APK", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                         
                         TextButton(onClick = { 
@@ -223,33 +258,68 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
+            // Stats Row
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard("MODS DETECTED", modCount.toString(), Modifier.weight(1f))
-                StatCard("SMAPI VERSION", "4.5.1", Modifier.weight(1f))
+                StatCard("MODS LOADED", modList.size.toString(), Modifier.weight(1f))
+                StatCard("ENGINE", "4.5.1", Modifier.weight(1f))
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F0F0F))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Mod List Header
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("MOD MANAGER", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.weight(1f))
+                TextButton(onClick = { loadMods() }) {
+                    Text("REFRESH", color = StardewGold, fontSize = 12.sp)
+                }
+            }
+
+            // Mod List
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("FOLDER: /sdcard/$DEFAULT_FOLDER", color = Color.DarkGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                items(modList.size) { index ->
+                    val mod = modList[index]
+                    ModItem(mod)
                 }
             }
         }
     }
 
     @Composable
+    fun ModItem(mod: ModInfo) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (mod.isEnabled) Color(0xFF2D2D2D) else Color(0xFF1A1A1A))
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(mod.name, color = if (mod.isEnabled) Color.White else Color.Gray, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("by ${mod.author} • v${mod.version}", color = Color.Gray, fontSize = 12.sp)
+                }
+                Switch(
+                    checked = mod.isEnabled,
+                    onCheckedChange = { toggleMod(mod) },
+                    colors = SwitchDefaults.colors(checkedThumbColor = StardewGreen)
+                )
+            }
+        }
+    }
+
+    @Composable
     fun StatCard(title: String, value: String, modifier: Modifier) {
-        Card(modifier = modifier.height(80.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF141414))) {
+        Card(modifier = modifier.height(80.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = StardewBrown)) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(title, color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                Text(value, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(title, color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Text(value, color = StardewGold, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
