@@ -69,7 +69,9 @@ class PatcherService(private val context: Context) {
         // 3. Rebuild (Using ApkBuilder)
         try {
             Log.d(TAG, "Rebuilding APK...")
-            val builder = brut.androlib.ApkBuilder(brut.directory.ExtFile(decompiledDir))
+            // Fix: Use the (Config, ExtFile) constructor to avoid the internal call to Config.getDefaultConfig()
+            // which crashes on Android due to OSDetection.
+            val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
             builder.build(unsignedApk)
         } catch (e: Exception) {
             throw Exception("Rebuild failed: ${e.message}")
