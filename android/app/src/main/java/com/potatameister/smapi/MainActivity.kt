@@ -46,13 +46,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Fix for Apktool OSDetection crash on some devices
-        if (System.getProperty("os.name") == null) {
-            System.setProperty("os.name", "linux")
-        }
-        System.setProperty("user.home", filesDir.absolutePath)
-        
         checkPermissionStatus()
         
         setContent {

@@ -15,12 +15,6 @@ class PatcherService(private val context: Context) {
     fun patchGame(originalApkPath: String) {
         Log.d(TAG, "Starting stable digital surgery for: $originalApkPath")
 
-        // Fix: Prime system properties for Apktool's OSDetection to prevent NPE on Android
-        System.setProperty("os.name", "linux")
-        System.setProperty("java.vm.vendor", "The Android Project")
-        System.setProperty("java.vm.name", "Dalvik")
-        System.setProperty("user.home", context.filesDir.absolutePath)
-        
         val workspace = File(context.externalCacheDir, "patch_workspace")
         if (workspace.exists()) workspace.deleteRecursively()
         if (!workspace.mkdirs()) throw Exception("Failed to create workspace directory")
