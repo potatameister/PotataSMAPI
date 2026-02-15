@@ -1,21 +1,36 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Apktool / brut dependencies
+-keep class brut.androlib.** { *; }
+-keep class brut.androlib.res.data.** { *; }
+-keep class brut.j.dir.** { *; }
+-keep class brut.common.** { *; }
+-keep class brut.util.** { *; }
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Smali / Dexlib2
+-keep class com.android.tools.smali.** { *; }
+-keep class org.jf.dexlib2.** { *; }
+-keep class org.jf.util.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Antlr
+-keep class org.antlr.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Guava
+-keep class com.google.common.** { *; }
+-dontwarn com.google.common.**
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
+
+# Apache Commons
+-keep class org.apache.commons.** { *; }
+-dontwarn org.apache.commons.**
+
+# YAML
+-keep class org.yaml.snakeyaml.** { *; }
+-dontwarn org.yaml.snakeyaml.**
+
+# General reflection safety
+-keepattributes Signature,AnnotationDefault,EnclosingMethod,InnerClasses,SourceFile,LineNumberTable
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Application
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+-keep public class * extends android.content.ContentProvider
