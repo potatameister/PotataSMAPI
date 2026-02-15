@@ -37,7 +37,10 @@ class PatcherService(private val context: Context) {
 
         // 1. Decompile using Apktool Lib
         try {
-            val decoder = ApkDecoder(originalApkFile)
+            val config = brut.androlib.Config.getDefaultConfig()
+            config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
+            
+            val decoder = ApkDecoder(config, originalApkFile)
             decoder.decode(decompiledDir)
         } catch (e: Exception) {
             throw Exception("Decompile failed: ${e.message}")
