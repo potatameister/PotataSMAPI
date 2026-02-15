@@ -69,7 +69,7 @@ class PatcherService(private val context: Context) {
         // 3. Rebuild (Using ApkBuilder)
         try {
             Log.d(TAG, "Rebuilding APK...")
-            val builder = brut.androlib.ApkBuilder(brut.common.ExtFile(decompiledDir))
+            val builder = brut.androlib.ApkBuilder(brut.directory.ExtFile(decompiledDir))
             builder.build(unsignedApk)
         } catch (e: Exception) {
             throw Exception("Rebuild failed: ${e.message}")
