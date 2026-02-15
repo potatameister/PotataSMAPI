@@ -37,8 +37,12 @@ class PatcherService(private val context: Context) {
 
         // 1. Decompile using Apktool Lib
         try {
-            // Fix: Manually instantiate Config to bypass buggy getDefaultConfig() initialization
-            val config = brut.androlib.Config()
+            // Fix: Use reflection to bypass private constructor and avoid buggy getDefaultConfig() 
+            // which triggers a crash on some Android devices due to OSDetection.
+            val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
+            configConstructor.isAccessible = true
+            val config = configConstructor.newInstance() as brut.androlib.Config
+            
             val frameworkDir = File(context.cacheDir, "apktool_framework")
             if (!frameworkDir.exists()) frameworkDir.mkdirs()
             
