@@ -8,7 +8,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Scanner
 import brut.androlib.ApkDecoder
-import brut.common.ExtFile
+import brut.directory.ExtFile
 
 class PatcherService(private val context: Context) {
     private val TAG = "PotataPatcher"
