@@ -1,33 +1,35 @@
 # Apktool / brut dependencies
 -keep class brut.androlib.** { *; }
+-keep class brut.common.ExtFile { *; }
 -keep class brut.androlib.res.data.** { *; }
 -keep class brut.j.dir.** { *; }
 -keep class brut.common.** { *; }
 -keep class brut.util.** { *; }
+-keep class brut.directory.** { *; }
 
 # Smali / Dexlib2
 -keep class com.android.tools.smali.** { *; }
 -keep class org.jf.dexlib2.** { *; }
 -keep class org.jf.util.** { *; }
 
-# Antlr
--keep class org.antlr.** { *; }
+# Antlr - Allow obfuscation but keep structure
+-keep,allowobfuscation class org.antlr.** { *; }
 
-# Guava
--keep class com.google.common.** { *; }
+# Guava - Be more aggressive, only keep what's referenced
+-keep,allowobfuscation class com.google.common.** { *; }
 -dontwarn com.google.common.**
 -dontwarn com.google.errorprone.annotations.**
 -dontwarn javax.annotation.**
 
-# Apache Commons
--keep class org.apache.commons.** { *; }
+# Apache Commons - Allow obfuscation
+-keep,allowobfuscation class org.apache.commons.** { *; }
 -dontwarn org.apache.commons.**
 
 # YAML
 -keep class org.yaml.snakeyaml.** { *; }
 -dontwarn org.yaml.snakeyaml.**
 
-# Ignore missing desktop GUI classes (Swing/AWT/ImageIO) that don't exist on Android
+# Ignore missing desktop GUI classes (Swing/AWT/ImageIO)
 -dontwarn javax.swing.**
 -dontwarn java.awt.**
 -dontwarn javax.imageio.**
@@ -35,6 +37,7 @@
 -dontwarn java.beans.**
 -dontwarn com.sun.source.**
 -dontwarn javax.annotation.processing.**
+-dontwarn org.stringtemplate.v4.gui.**
 
 # General reflection safety
 -keepattributes Signature,AnnotationDefault,EnclosingMethod,InnerClasses,SourceFile,LineNumberTable

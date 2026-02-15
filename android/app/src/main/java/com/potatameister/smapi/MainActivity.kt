@@ -169,8 +169,9 @@ class MainActivity : ComponentActivity() {
                                             isPatched = true
                                             statusText = "Success!"
                                         } catch (e: Exception) {
-                                            statusText = "Failed: ${e.message}"
-                                            Log.e("Potata", "Error", e)
+                                            val errorMsg = android.util.Log.getStackTraceString(e)
+                                            statusText = "Failed: ${e.localizedMessage}"
+                                            Log.e("Potata", "Error: $errorMsg")
                                         } finally { isPatching = false }
                                     }
                                 }
