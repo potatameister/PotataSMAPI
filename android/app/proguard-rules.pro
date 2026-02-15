@@ -27,6 +27,10 @@
 -keep class org.yaml.snakeyaml.** { *; }
 -dontwarn org.yaml.snakeyaml.**
 
+# Ignore missing desktop GUI classes (Swing/AWT) that don't exist on Android
+-dontwarn javax.swing.**
+-dontwarn java.awt.**
+
 # General reflection safety
 -keepattributes Signature,AnnotationDefault,EnclosingMethod,InnerClasses,SourceFile,LineNumberTable
 -keep public class * extends android.app.Activity
