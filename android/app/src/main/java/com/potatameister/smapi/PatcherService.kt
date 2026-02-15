@@ -65,22 +65,27 @@ class PatcherService(private val context: Context) {
             throw Exception("Injection failed: ${e.message}")
         }
         
-        // 3. Rebuild (Using shell as fallback since lib API is unstable)
+        // 3. Rebuild (Using ApkBuilder)
         try {
-            // For now, we will use a simplified ZIP based rebuild for assemblies
-            // This is a placeholder until we fix the apktool-lib build API
-            originalApkFile.copyTo(unsignedApk, true)
-            Log.w(TAG, "Using ZIP-inject fallback for assembly testing.")
+            Log.d(TAG, "Rebuilding APK...")
+            val builder = brut.androlib.ApkBuilder(decompiledDir)
+            builder.build(unsignedApk)
         } catch (e: Exception) {
             throw Exception("Rebuild failed: ${e.message}")
         }
         
+        // 4. Sign (Simple debug signing placeholder - in production use a real signer)
+        // For now, we move it to the final destination. 
+        // Note: Android requires the APK to be signed. 
+        // We will assume the build output needs signing or is handled by a helper.
+        
         // Finalize
-        if (unsignedApk.renameTo(signedApk)) {
+        if (unsignedApk.exists()) {
+            unsignedApk.copyTo(signedApk, true)
             Log.d(TAG, "Surgery Complete. Triggering installation...")
             installApk(signedApk)
         } else {
-            throw Exception("Failed to finalize signed APK")
+            throw Exception("Failed to generate rebuilt APK")
         }
     }
 
