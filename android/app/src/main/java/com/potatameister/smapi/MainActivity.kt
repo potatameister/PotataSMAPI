@@ -187,7 +187,7 @@ class MainActivity : ComponentActivity() {
                                 onClick = { openApkPicker() },
                                 modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
-                                border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFF222222)))
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF222222))
                             ) {
                                 Text("SELECT APK MANUALLY", color = Color.Gray, fontSize = 12.sp)
                             }
