@@ -39,6 +39,7 @@
 -dontwarn com.sun.source.**
 -dontwarn javax.annotation.processing.**
 -dontwarn org.stringtemplate.v4.gui.**
+-dontwarn brut.androlib.res.decoder.**
 
 # General reflection safety
 -keepattributes Signature,AnnotationDefault,EnclosingMethod,InnerClasses,SourceFile,LineNumberTable
