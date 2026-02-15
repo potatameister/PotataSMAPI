@@ -43,11 +43,11 @@ class PatcherService(private val context: Context) {
 
         // 1. Decompile using Apktool Lib
         try {
-            // Fix: Explicitly set framework directory for Android to avoid ExceptionInInitializerError
+            // Fix: Manually instantiate Config to bypass buggy getDefaultConfig() initialization
+            val config = brut.androlib.Config()
             val frameworkDir = File(context.cacheDir, "apktool_framework")
             if (!frameworkDir.exists()) frameworkDir.mkdirs()
             
-            val config = brut.androlib.Config.getDefaultConfig()
             config.frameworkDirectory = frameworkDir.absolutePath
             config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
             
