@@ -1,5 +1,7 @@
 # Apktool / brut dependencies
--keep class brut.androlib.Config { *; }
+-keep class brut.androlib.Config {
+    public *;
+}
 -keep class brut.androlib.** { *; }
 -keep class brut.common.ExtFile { *; }
 -keep class brut.androlib.res.data.** { *; }
