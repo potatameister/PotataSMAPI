@@ -20,6 +20,18 @@ class PatcherService(private val context: Context) {
         if (workspace.exists()) workspace.deleteRecursively()
         if (!workspace.mkdirs()) throw Exception("Failed to create workspace directory")
 
+        // Fix: Use reflection to bypass private constructor and avoid buggy getDefaultConfig() 
+        // which triggers a crash on some Android devices due to OSDetection.
+        val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
+        configConstructor.isAccessible = true
+        val config = configConstructor.newInstance() as brut.androlib.Config
+        
+        val frameworkDir = File(context.cacheDir, "apktool_framework")
+        if (!frameworkDir.exists()) frameworkDir.mkdirs()
+        
+        config.frameworkDirectory = frameworkDir.absolutePath
+        config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
+
         val originalApkFile = File(workspace, "base_game.apk")
         val decompiledDir = File(workspace, "decompiled")
         val unsignedApk = File(workspace, "unsigned.apk")
@@ -38,19 +50,7 @@ class PatcherService(private val context: Context) {
 
         // 1. Decompile using Apktool Lib
         try {
-            // Fix: Use reflection to bypass private constructor and avoid buggy getDefaultConfig() 
-            // which triggers a crash on some Android devices due to OSDetection.
-            val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
-            configConstructor.isAccessible = true
-            val config = configConstructor.newInstance() as brut.androlib.Config
-            
-            val frameworkDir = File(context.cacheDir, "apktool_framework")
-            if (!frameworkDir.exists()) frameworkDir.mkdirs()
-            
-            config.frameworkDirectory = frameworkDir.absolutePath
-            config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
-            
-            val decoder = ApkDecoder(config, originalApkFile)
+            val decoder = ApkDecoder(config, brut.directory.ExtFile(originalApkFile))
             decoder.decode(decompiledDir)
         } catch (e: Exception) {
             throw Exception("Decompile failed: ${e.message}")
