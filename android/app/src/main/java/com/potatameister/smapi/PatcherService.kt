@@ -48,6 +48,7 @@ class PatcherService(private val context: Context) {
         
         // 2. Hook & Inject
         try {
+            renamePackage(decompiledDir)
             injectSmaliHook(decompiledDir)
             injectSmapiNativeSmali(decompiledDir)
             injectSmapiCore(decompiledDir)
@@ -74,6 +75,26 @@ class PatcherService(private val context: Context) {
         }
     }
 
+    private fun renamePackage(decompiledDir: File) {
+        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
+        if (!manifestFile.exists()) return
+
+        val originalPackage = "com.chucklefish.stardewvalley"
+        val newPackage = "com.potatameister.smapi.stardew"
+        
+        var content = manifestFile.readText()
+        
+        // 1. Rename the main package attribute
+        content = content.replace("package=\"$originalPackage\"", "package=\"$newPackage\"")
+        
+        // 2. Rename authorities to avoid conflict
+        // Stardew uses several providers, we'll append .smapi to them
+        content = content.replace("android:authorities=\"$originalPackage", "android:authorities=\"$newPackage")
+        
+        manifestFile.writeText(content)
+        Log.d(TAG, "Package renamed to $newPackage")
+    }
+
     private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
         if (!smapiDir.exists()) smapiDir.mkdirs()
@@ -84,8 +105,12 @@ class PatcherService(private val context: Context) {
                 ".method public static init()V\n" +
                 "    .registers 2\n" +
                 "    const-string v0, \"SmapiNative\"\n" +
-                "    const-string v1, \"SMAPI Bootstrapping...\"\n" +
+                "    const-string v1, \"SMAPI Bootstrapping (Modded)...\"\n" +
                 "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
+                "    \n" +
+                "    # Set EarlyConstants.AndroidBaseDirPath = /sdcard/PotataSMAPI\n" +
+                "    const-string v0, \"/sdcard/PotataSMAPI\"\n" +
+                "    invoke-static {v0}, LStardewModdingAPI/EarlyConstants;->set_AndroidBaseDirPath(Ljava/lang/String;)V\n" +
                 "    return-void\n" +
                 ".end method"
 
