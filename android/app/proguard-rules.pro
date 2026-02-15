@@ -1,4 +1,5 @@
 # Apktool / brut dependencies
+-keep class brut.util.OSDetection { *; }
 -keep class brut.androlib.Config {
     public *;
 }
