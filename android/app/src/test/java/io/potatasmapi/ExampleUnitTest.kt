@@ -1,4 +1,4 @@
-package com.potatameister.smapi
+package io.potatasmapi
 
 import org.junit.Test
 import org.junit.Assert.*

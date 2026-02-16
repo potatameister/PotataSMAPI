@@ -1,4 +1,4 @@
-package com.potatameister.smapi
+package io.potatasmapi
 
 import android.content.Context
 import android.content.Intent
@@ -17,7 +17,6 @@ import java.security.cert.X509Certificate
 class PatcherService(private val context: Context) {
     companion object {
         init {
-            // Secondary safeguard for OSDetection NPE
             if (System.getProperty("os.name").isNullOrBlank()) {
                 System.setProperty("os.name", "linux")
             }
@@ -34,18 +33,13 @@ class PatcherService(private val context: Context) {
         if (workspace.exists()) workspace.deleteRecursively()
         if (!workspace.mkdirs()) throw Exception("Failed to create workspace directory")
 
-        // Fix: Use reflection to bypass private constructor and avoid buggy getDefaultConfig() 
         val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
         configConstructor.isAccessible = true
         val config = configConstructor.newInstance() as brut.androlib.Config
         
         val frameworkDir = File(context.cacheDir, "apktool_framework")
         if (!frameworkDir.exists()) frameworkDir.mkdirs()
-        
         config.frameworkDirectory = frameworkDir.absolutePath
-        
-        // CRITICAL: Revert to NONE. BUILDING resources on Android will ALWAYS crash
-        // because it requires a native aapt binary (linux/win/mac) which isn't in the jar.
         config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
 
         val originalApkFile = File(workspace, "base_game.apk")
@@ -74,9 +68,8 @@ class PatcherService(private val context: Context) {
         
         // 2. Hook & Inject
         try {
-            // Note: renamePackage is disabled for now because it requires full resource decoding.
-            // We will implement a binary manifest renamer in the next update.
-            // renamePackage(decompiledDir) 
+            // SIDE-BY-SIDE FIX: Patch binary manifest directly
+            patchBinaryManifest(decompiledDir)
             
             injectSmaliHook(decompiledDir)
             injectSmapiNativeSmali(decompiledDir)
@@ -90,7 +83,6 @@ class PatcherService(private val context: Context) {
             Log.d(TAG, "Rebuilding APK into: ${unsignedApk.absolutePath}")
             val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
             builder.build(unsignedApk)
-            Log.d(TAG, "ApkBuilder finished. Unsigned APK exists: ${unsignedApk.exists()}")
         } catch (e: Exception) {
             Log.e(TAG, "Rebuild CRASHED: ${Log.getStackTraceString(e)}")
             throw Exception("Rebuild failed: ${e.message}")
@@ -100,7 +92,6 @@ class PatcherService(private val context: Context) {
         try {
             Log.d(TAG, "Signing APK...")
             signApk(unsignedApk, signedApk)
-            Log.d(TAG, "Signing successful!")
         } catch (e: Exception) {
             Log.e(TAG, "Signing FAILED: ${Log.getStackTraceString(e)}")
             throw Exception("Signing failed: ${e.message}")
@@ -108,11 +99,63 @@ class PatcherService(private val context: Context) {
         
         // Finalize
         if (signedApk.exists()) {
-            Log.d(TAG, "Surgery Complete. Final APK: ${signedApk.absolutePath} (${signedApk.length()} bytes)")
+            Log.d(TAG, "Surgery Complete. Final APK: ${signedApk.absolutePath}")
             installApk(signedApk)
         } else {
             throw Exception("Failed to generate final signed APK")
         }
+    }
+
+    private fun patchBinaryManifest(decompiledDir: File) {
+        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
+        if (!manifestFile.exists()) return
+
+        // We use a 28-character replacement to keep the binary structure intact.
+        // Original: com.chucklefish.stardewvalley (28)
+        // New:      io.potatasmapi.stardew_valley (28)
+        val oldPkg = "com.chucklefish.stardewvalley"
+        val newPkg = "io.potatasmapi.stardew_valley"
+
+        Log.d(TAG, "Binary patching manifest for side-by-side install...")
+        
+        val bytes = manifestFile.readBytes()
+        val oldBytesUtf8 = oldPkg.toByteArray(Charsets.UTF_8)
+        val newBytesUtf8 = newPkg.toByteArray(Charsets.UTF_8)
+        
+        // Binary XML uses UTF-16LE for strings usually
+        val oldBytesUtf16 = oldPkg.toByteArray(Charsets.UTF_16LE)
+        val newBytesUtf16 = newPkg.toByteArray(Charsets.UTF_16LE)
+
+        var patchedBytes = bytes
+        patchedBytes = replaceBytes(patchedBytes, oldBytesUtf8, newBytesUtf8)
+        patchedBytes = replaceBytes(patchedBytes, oldBytesUtf16, newBytesUtf16)
+
+        manifestFile.writeBytes(patchedBytes)
+        Log.d(TAG, "Binary manifest patched successfully.")
+    }
+
+    private fun replaceBytes(source: ByteArray, old: ByteArray, new: ByteArray): ByteArray {
+        if (old.size != new.size) return source // Safety check
+        val result = source.copyOf()
+        var i = 0
+        while (i <= result.size - old.size) {
+            var match = true
+            for (j in old.indices) {
+                if (result[i + j] != old[j]) {
+                    match = false
+                    break
+                }
+            }
+            if (match) {
+                for (j in new.indices) {
+                    result[i + j] = new[j]
+                }
+                i += old.size
+            } else {
+                i++
+            }
+        }
+        return result
     }
 
     private fun signApk(inputApk: File, outputApk: File) {
@@ -122,37 +165,25 @@ class PatcherService(private val context: Context) {
                 ksFile.outputStream().use { output -> input.copyTo(output) }
             }
         }
-
         val keystore = KeyStore.getInstance("PKCS12")
-        ksFile.inputStream().use { input ->
-            keystore.load(input, KEYSTORE_PASS.toCharArray())
-        }
-        
+        ksFile.inputStream().use { input -> keystore.load(input, KEYSTORE_PASS.toCharArray()) }
         val privateKey = keystore.getKey(ALIAS, KEYSTORE_PASS.toCharArray()) as PrivateKey
         val cert = keystore.getCertificate(ALIAS) as X509Certificate
-        
         val signerConfig = ApkSigner.SignerConfig.Builder(ALIAS, privateKey, listOf(cert)).build()
-        
-        val apkSigner = ApkSigner.Builder(listOf(signerConfig))
+        ApkSigner.Builder(listOf(signerConfig))
             .setInputApk(inputApk)
             .setOutputApk(outputApk)
             .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
             .setMinSdkVersion(24)
             .build()
-            
-        apkSigner.sign()
-    }
-
-    private fun renamePackage(decompiledDir: File) {
-        // Disabled for now
+            .sign()
     }
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
-        val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
+        val smapiDir = File(decompiledDir, "smali/io/potatasmapi")
         if (!smapiDir.exists()) smapiDir.mkdirs()
-        
-        val smaliCode = ".class public Lcom/potatameister/smapi/SmapiNative;\n" +
+        val smaliCode = ".class public Lio/potatasmapi/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
                 ".source \"SmapiNative.java\"\n\n" +
                 ".method public static init()V\n" +
@@ -160,22 +191,16 @@ class PatcherService(private val context: Context) {
                 "    const-string v0, \"SmapiNative\"\n" +
                 "    const-string v1, \"SMAPI Bootstrapping (Modded)...\"\n" +
                 "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
-                "    \n" +
-                "    # Set EarlyConstants.AndroidBaseDirPath = /sdcard/PotataSMAPI\n" +
                 "    const-string v0, \"/sdcard/PotataSMAPI\"\n" +
                 "    invoke-static {v0}, LStardewModdingAPI/EarlyConstants;->set_AndroidBaseDirPath(Ljava/lang/String;)V\n" +
                 "    return-void\n" +
                 ".end method"
-
         File(smapiDir, "SmapiNative.smali").writeText(smaliCode)
     }
 
     private fun injectSmaliHook(decompiledDir: File) {
         var entrySmali = File(decompiledDir, "smali/com/chucklefish/stardewvalley/StardewValley.smali")
-        if (!entrySmali.exists()) {
-            entrySmali = File(decompiledDir, "smali_classes2/com/chucklefish/stardewvalley/StardewValley.smali")
-        }
-        
+        if (!entrySmali.exists()) entrySmali = File(decompiledDir, "smali_classes2/com/chucklefish/stardewvalley/StardewValley.smali")
         if (entrySmali.exists()) {
             val lines = entrySmali.readLines()
             val output = StringBuilder()
@@ -183,7 +208,7 @@ class PatcherService(private val context: Context) {
             for (line in lines) {
                 output.append(line).append("\n")
                 if (!hooked && line.contains("onCreate(Landroid/os/Bundle;)V")) {
-                    output.append("    invoke-static {}, Lcom/potatameister/smapi/SmapiNative;->init()V\n")
+                    output.append("    invoke-static {}, Lio/potatasmapi/SmapiNative;->init()V\n")
                     hooked = true
                 }
             }
@@ -193,20 +218,13 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiCore(decompiledDir: File) {
         var assemblyDir = File(decompiledDir, "assets/bin/Data/Managed")
-        if (!assemblyDir.exists()) {
-            assemblyDir = File(decompiledDir, "assets/assemblies")
-        }
+        if (!assemblyDir.exists()) assemblyDir = File(decompiledDir, "assets/assemblies")
         if (!assemblyDir.exists()) assemblyDir.mkdirs()
-            
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
     }
 
     private fun installApk(file: File) {
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

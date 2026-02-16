@@ -1,4 +1,4 @@
-package com.potatameister.smapi;
+package io.potatasmapi;
 
 import android.util.Log;
 

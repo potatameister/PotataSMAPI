@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.potatameister.smapi'
+    namespace 'io.potatasmapi'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.potatameister.smapi"
+        applicationId "io.potatasmapi"
         minSdk 24
         targetSdk 34
         versionCode 1

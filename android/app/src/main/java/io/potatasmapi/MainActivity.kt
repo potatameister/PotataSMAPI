@@ -1,4 +1,4 @@
-package com.potatameister.smapi
+package io.potatasmapi
 
 import android.content.Intent
 import android.net.Uri
