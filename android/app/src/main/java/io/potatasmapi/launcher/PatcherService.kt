@@ -7,6 +7,9 @@ import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Scanner
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+import java.util.zip.ZipEntry
 import brut.androlib.ApkDecoder
 import brut.directory.ExtFile
 import com.android.apksig.ApkSigner
@@ -27,11 +30,11 @@ class PatcherService(private val context: Context) {
     private val ALIAS = "potata_patcher"
 
     fun patchGame(originalApkPath: String) {
-        Log.d(TAG, "Starting stable digital surgery for: $originalApkPath")
+        Log.d(TAG, "Starting advanced surgery for: $originalApkPath")
 
         val workspace = File(context.externalCacheDir, "patch_workspace")
         if (workspace.exists()) workspace.deleteRecursively()
-        if (!workspace.mkdirs()) throw Exception("Failed to create workspace directory")
+        workspace.mkdirs()
 
         val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
         configConstructor.isAccessible = true
@@ -48,53 +51,37 @@ class PatcherService(private val context: Context) {
         val signedApk = File(workspace, "modded_stardew.apk")
 
         // 0. Copy APK
-        try {
-            if (originalApkPath.startsWith("content://")) {
-                copyUriToFile(Uri.parse(originalApkPath), originalApkFile)
-            } else {
-                File(originalApkPath).copyTo(originalApkFile, true)
-            }
-        } catch (e: Exception) {
-            throw Exception("Copy failed: ${e.message}")
+        if (originalApkPath.startsWith("content://")) {
+            copyUriToFile(Uri.parse(originalApkPath), originalApkFile)
+        } else {
+            File(originalApkPath).copyTo(originalApkFile, true)
         }
 
         // 1. Decompile
-        try {
-            val decoder = ApkDecoder(config, brut.directory.ExtFile(originalApkFile))
-            decoder.decode(decompiledDir)
-        } catch (e: Exception) {
-            throw Exception("Decompile failed: ${e.message}")
-        }
+        val decoder = ApkDecoder(config, brut.directory.ExtFile(originalApkFile))
+        decoder.decode(decompiledDir)
         
         // 2. Surgery
-        try {
-            patchBinaryManifest(decompiledDir)
-            patchGameIcons(decompiledDir)
-            injectSmaliHook(decompiledDir)
-            injectSmapiNativeSmali(decompiledDir)
-            injectSmapiCore(decompiledDir)
-        } catch (e: Exception) {
-            throw Exception("Injection failed: ${e.message}")
-        }
+        patchBinaryManifest(decompiledDir)
+        patchGameIcons(decompiledDir)
+        injectSmaliHook(decompiledDir)
+        injectSmapiNativeSmali(decompiledDir)
+        injectSmapiCore(decompiledDir)
         
         // 3. Rebuild
-        try {
-            Log.d(TAG, "Rebuilding APK...")
-            val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
-            builder.build(unsignedApk)
-        } catch (e: Exception) {
-            Log.e(TAG, "Rebuild CRASHED: ${Log.getStackTraceString(e)}")
-            throw Exception("Rebuild failed: ${e.message}")
-        }
+        Log.d(TAG, "Rebuilding APK base...")
+        val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
+        builder.build(unsignedApk)
         
-        // 4. Sign (Upgraded to V3 for Android 16 compatibility)
-        try {
-            Log.d(TAG, "Signing APK (V1, V2, V3)...")
-            signApk(unsignedApk, signedApk)
-        } catch (e: Exception) {
-            Log.e(TAG, "Signing FAILED: ${Log.getStackTraceString(e)}")
-            throw Exception("Signing failed: ${e.message}")
-        }
+        // 4. Critical Fix: Manual Library & Resource preservation
+        // We re-inject the original 'lib/' folder from the base game into the new APK
+        // because ApkBuilder often drops native libraries on Android rebuilds.
+        val finalUnsigned = File(workspace, "final_unsigned.apk")
+        reinjectMissingFiles(unsignedApk, originalApkFile, finalUnsigned)
+
+        // 5. Sign (V1, V2, V3)
+        Log.d(TAG, "Signing APK...")
+        signApk(finalUnsigned, signedApk)
         
         // Finalize
         if (signedApk.exists()) {
@@ -102,6 +89,33 @@ class PatcherService(private val context: Context) {
             installApk(signedApk)
         } else {
             throw Exception("Failed to generate final signed APK")
+        }
+    }
+
+    private fun reinjectMissingFiles(newApk: File, originalApk: File, outputFile: File) {
+        Log.d(TAG, "Reinforcing APK with original native libraries...")
+        ZipOutputStream(outputFile.outputStream()).use { zos ->
+            // Copy everything from the new built APK
+            ZipFile(newApk).use { zip ->
+                zip.entries().asSequence().forEach { entry ->
+                    zos.putNextEntry(ZipEntry(entry.name))
+                    zip.getInputStream(entry).use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+            // Add 'lib/' from the original APK if missing
+            ZipFile(originalApk).use { zip ->
+                zip.entries().asSequence().forEach { entry ->
+                    if (entry.name.startsWith("lib/")) {
+                        // Check if we already have it (though we shouldn't overwrite newer ones)
+                        try {
+                            zos.putNextEntry(ZipEntry(entry.name))
+                            zip.getInputStream(entry).use { it.copyTo(zos) }
+                            zos.closeEntry()
+                        } catch (e: Exception) { /* Already exists */ }
+                    }
+                }
+            }
         }
     }
 
@@ -117,16 +131,14 @@ class PatcherService(private val context: Context) {
     }
 
     private fun patchGameIcons(decompiledDir: File) {
-        Log.d(TAG, "Replacing game icons with modded version...")
+        Log.d(TAG, "Deep scanning for all launcher resources...")
         val resDir = File(decompiledDir, "res")
         if (!resDir.exists()) return
 
-        // Targeted names for Stardew launcher icons
-        val targetNames = listOf("ic_launcher", "icon", "app_icon", "ic_launcher_round", "ic_launcher_foreground")
+        val iconPattern = Regex(".*(icon|launcher|app_icon|logo).*\\.(png|webp|xml)")
         
         resDir.walkTopDown().forEach { file ->
-            val nameWithoutExt = file.nameWithoutExtension
-            if (targetNames.contains(nameWithoutExt)) {
+            if (iconPattern.matches(file.name.lowercase())) {
                 try {
                     when (file.extension.lowercase()) {
                         "png", "webp" -> {
@@ -135,23 +147,13 @@ class PatcherService(private val context: Context) {
                             }
                         }
                         "xml" -> {
-                            // If it's an adaptive icon XML, we force it to a simple bitmap icon
-                            // to ensure our new PNG is used.
-                            val simpleXml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
-                                    "<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n" +
-                                    "    <background android:drawable=\"@android:color/black\"/>\n" +
-                                    "    <foreground android:drawable=\"@mipmap/ic_launcher\"/>\n" +
-                                    "</adaptive-icon>"
-                            // Only overwrite if it looks like a launcher XML
+                            // If it's an adaptive icon XML, we simplify it to use our bitmap
                             if (file.readText().contains("adaptive-icon")) {
-                                file.writeText(simpleXml)
+                                file.writeText("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n<background android:drawable=\"@android:color/black\"/>\n<foreground android:drawable=\"@mipmap/ic_launcher\"/>\n</adaptive-icon>")
                             }
                         }
                     }
-                    Log.d(TAG, "Patched resource: ${file.absolutePath}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to patch ${file.name}", e)
-                }
+                } catch (e: Exception) { }
             }
         }
     }
@@ -162,9 +164,7 @@ class PatcherService(private val context: Context) {
         var i = 0
         while (i <= result.size - old.size) {
             var match = true
-            for (j in old.indices) {
-                if (result[i + j] != old[j]) { match = false; break }
-            }
+            for (j in old.indices) { if (result[i + j] != old[j]) { match = false; break } }
             if (match) {
                 for (j in new.indices) { result[i + j] = new[j] }
                 i += old.size
@@ -176,9 +176,7 @@ class PatcherService(private val context: Context) {
     private fun signApk(inputApk: File, outputApk: File) {
         val ksFile = File(context.cacheDir, "patcher.p12")
         if (!ksFile.exists()) {
-            context.assets.open("potata_patcher.p12").use { input ->
-                ksFile.outputStream().use { output -> input.copyTo(output) }
-            }
+            context.assets.open("potata_patcher.p12").use { input -> ksFile.outputStream().use { output -> input.copyTo(output) } }
         }
         val keystore = KeyStore.getInstance("PKCS12")
         ksFile.inputStream().use { input -> keystore.load(input, KEYSTORE_PASS.toCharArray()) }
@@ -191,7 +189,8 @@ class PatcherService(private val context: Context) {
             .setOutputApk(outputApk)
             .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
-            .setV3SigningEnabled(true) // Stronger signature for Android 16
+            .setV3SigningEnabled(true)
+            .setV4SigningEnabled(false)
             .setMinSdkVersion(24)
             .build()
             .sign()
@@ -206,7 +205,7 @@ class PatcherService(private val context: Context) {
                 ".method public static init()V\n" +
                 "    .registers 2\n" +
                 "    const-string v0, \"SmapiNative\"\n" +
-                "    const-string v1, \"SMAPI Bootstrapping (Modded)...\"\n" +
+                "    const-string v1, \"SMAPI Bootstrapping...\"\n" +
                 "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
                 "    const-string v0, \"/sdcard/PotataSMAPI\"\n" +
                 "    invoke-static {v0}, LStardewModdingAPI/EarlyConstants;->set_AndroidBaseDirPath(Ljava/lang/String;)V\n" +
@@ -235,14 +234,12 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiCore(decompiledDir: File) {
         var assemblyDir = File(decompiledDir, "assets/bin/Data/Managed")
-        if (!assemblyDir.exists()) assemblyDir = File(decompiledDir, "assets/assemblies")
         if (!assemblyDir.exists()) assemblyDir.mkdirs()
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
     }
 
     private fun installApk(file: File) {
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        Log.d(TAG, "Triggering install for URI: $uri")
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
