@@ -26,7 +26,6 @@ class PatcherService(private val context: Context) {
         virtualRoot.mkdirs()
 
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
-        val dexDir = File(virtualRoot, "dex").apply { mkdirs() }
         
         log("Scanning Cartridge: ${File(originalApkPath).name}")
         
@@ -38,7 +37,7 @@ class PatcherService(private val context: Context) {
             File(originalApkPath)
         }
 
-        // Keep the APK for resource mapping
+        // Keep the APK for resource mapping and code loading
         val virtualApk = File(virtualRoot, "base.apk")
         sourceFile.copyTo(virtualApk, overwrite = true)
 
@@ -50,23 +49,12 @@ class PatcherService(private val context: Context) {
             ZipFile(sourceFile).use { zip ->
                 val entries = zip.entries().asSequence().toList()
                 
-                // 1. Extract Code (All DEX files)
-                val dexEntries = entries.filter { it.name.endsWith(".dex") }
-                dexEntries.forEach { entry ->
-                    log("Extracting Code: ${entry.name}")
-                    val target = File(dexDir, entry.name)
-                    zip.getInputStream(entry).use { input ->
-                        target.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    target.setReadOnly()
-                }
-
-                // 2. Extract Native Engine (.so files)
-                // We only extract the ones matching our preferred ABI
+                // 1. Extract Native Engine (.so files)
+                // We extract them to a separate dir for the ClassLoader to find them easily
+                log("Extracting Native Engine...")
                 val libEntries = entries.filter { it.name.startsWith("lib/$preferredAbi/") && it.name.endsWith(".so") }
                 if (libEntries.isEmpty() && preferredAbi == "arm64-v8a") {
                     log("Warning: arm64 engine missing, falling back to 32-bit...")
-                    // Fallback to arm-v7a if 64-bit is missing (common in some APKs)
                     entries.filter { it.name.startsWith("lib/armeabi-v7a/") && it.name.endsWith(".so") }.forEach { entry ->
                         val target = File(libDir, File(entry.name).name)
                         zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
@@ -78,7 +66,7 @@ class PatcherService(private val context: Context) {
                     }
                 }
 
-                // 3. Extract Assets (Content)
+                // 2. Extract Assets (Content)
                 log("Unpacking Game Assets...")
                 entries.filter { it.name.startsWith("assets/") && !it.isDirectory }.forEach { entry ->
                     val target = File(virtualRoot, entry.name)
@@ -86,7 +74,7 @@ class PatcherService(private val context: Context) {
                     zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
                 }
 
-                // 4. Inject SMAPI Engine
+                // 3. Inject SMAPI Engine
                 log("Injecting SMAPI Core...")
                 context.assets.open("StardewModdingAPI.dll").use { input ->
                     File(virtualRoot, "StardewModdingAPI.dll").outputStream().use { output ->

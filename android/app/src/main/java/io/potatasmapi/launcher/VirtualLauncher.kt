@@ -22,7 +22,6 @@ class VirtualLauncher(private val context: Context) {
     fun launch() {
         try {
             val virtualRoot = File(context.filesDir, "virtual/stardew")
-            val dexDir = File(virtualRoot, "dex")
             val libDir = File(virtualRoot, "lib")
             val baseApk = File(virtualRoot, "base.apk")
             
@@ -32,17 +31,14 @@ class VirtualLauncher(private val context: Context) {
 
             PotataApp.addLog("Initializing Virtual Engine...")
 
-            // 1. Collect all DEX files
-            val dexFiles = dexDir.listFiles()?.filter { it.name.endsWith(".dex") }?.map { it.absolutePath }
-            if (dexFiles.isNullOrEmpty()) throw Exception("No game code found.")
-            
-            val dexPath = dexFiles.joinToString(File.pathSeparator)
+            // 1. Prepare Paths
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
             // 2. Create the Virtual ClassLoader
+            // We point to base.apk directly so Android handles multidex automatically
             val classLoader = DexClassLoader(
-                dexPath,
+                baseApk.absolutePath,
                 optimizedDexPath,
                 nativeLibPath,
                 context.classLoader
