@@ -36,7 +36,7 @@ class PatcherService(private val context: Context) {
         if (!frameworkDir.exists()) frameworkDir.mkdirs()
         
         config.frameworkDirectory = frameworkDir.absolutePath
-        config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
+        config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_FULL
 
         val originalApkFile = File(workspace, "base_game.apk")
         val decompiledDir = File(workspace, "decompiled")
