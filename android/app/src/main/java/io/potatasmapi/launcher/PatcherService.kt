@@ -132,6 +132,7 @@ class PatcherService(private val context: Context) {
                     zos.putNextEntry(newEntry)
                     zos.write(bytes)
                 } else {
+                    val newEntry = ZipEntry(name)
                     zos.putNextEntry(newEntry)
                     zip.getInputStream(entry).use { it.copyTo(zos) }
                 }
