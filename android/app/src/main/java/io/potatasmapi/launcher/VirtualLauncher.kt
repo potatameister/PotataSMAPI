@@ -126,18 +126,31 @@ class VirtualLauncher(private val context: Context) {
             mClassLoaderField.set(loadedApk, classLoader)
 
             // 2. Update Paths (important for resources and activity instantiation)
-            val mAppDirField = loadedApkClass.getDeclaredField("mAppDir")
-            mAppDirField.isAccessible = true
-            mAppDirField.set(loadedApk, baseApk)
+            try {
+                val mAppDirField = loadedApkClass.getDeclaredField("mAppDir")
+                mAppDirField.isAccessible = true
+                mAppDirField.set(loadedApk, baseApk)
+            } catch (e: Exception) { Log.w(TAG, "mAppDir not found") }
 
-            val mResDirField = loadedApkClass.getDeclaredField("mResDir")
-            mResDirField.isAccessible = true
-            mResDirField.set(loadedApk, baseApk)
+            try {
+                val mResDirField = loadedApkClass.getDeclaredField("mResDir")
+                mResDirField.isAccessible = true
+                mResDirField.set(loadedApk, baseApk)
+            } catch (e: Exception) { Log.w(TAG, "mResDir not found") }
 
             if (apkPaths.size > 1) {
-                val mSplitSourceDirsField = loadedApkClass.getDeclaredField("mSplitSourceDirs")
-                mSplitSourceDirsField.isAccessible = true
-                mSplitSourceDirsField.set(loadedApk, apkPaths)
+                try {
+                    val mSplitSourceDirsField = loadedApkClass.getDeclaredField("mSplitSourceDirs")
+                    mSplitSourceDirsField.isAccessible = true
+                    mSplitSourceDirsField.set(loadedApk, apkPaths)
+                } catch (e: Exception) { 
+                    Log.w(TAG, "mSplitSourceDirs not found, trying mSplitResDirs")
+                    try {
+                        val mSplitResDirsField = loadedApkClass.getDeclaredField("mSplitResDirs")
+                        mSplitResDirsField.isAccessible = true
+                        mSplitResDirsField.set(loadedApk, apkPaths)
+                    } catch (e2: Exception) { Log.w(TAG, "mSplitResDirs not found") }
+                }
             }
             
             PotataApp.addLog("System ClassLoader & Paths Swapped.")
