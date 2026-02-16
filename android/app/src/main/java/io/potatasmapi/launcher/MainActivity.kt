@@ -338,7 +338,7 @@ class MainActivity : ComponentActivity() {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
                                 onClick = { 
-                                    statusText = "Launching Virtual Game... (WIP)" 
+                                    VirtualLauncher(this@MainActivity).launch()
                                 },
                                 modifier = Modifier.weight(1f).height(56.dp),
                                 shape = RoundedCornerShape(16.dp),
