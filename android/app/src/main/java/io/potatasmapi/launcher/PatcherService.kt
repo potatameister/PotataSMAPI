@@ -9,6 +9,7 @@ import java.io.FileOutputStream
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import java.util.zip.ZipEntry
+import java.util.zip.CRC32
 import brut.androlib.ApkDecoder
 import brut.directory.ExtFile
 import com.android.apksig.ApkSigner
@@ -29,7 +30,7 @@ class PatcherService(private val context: Context) {
     private val ALIAS = "potata_patcher"
 
     fun patchGame(originalApkPath: String) {
-        Log.d(TAG, "Starting Zip-Inject Surgery for: $originalApkPath")
+        Log.d(TAG, "Starting Android 16 Compatible Surgery...")
 
         val workspace = File(context.externalCacheDir, "patch_workspace")
         if (workspace.exists()) workspace.deleteRecursively()
@@ -41,14 +42,13 @@ class PatcherService(private val context: Context) {
         val finalUnsigned = File(workspace, "final_unsigned.apk")
         val signedApk = File(workspace, "modded_stardew.apk")
 
-        // 0. Copy APK
         if (originalApkPath.startsWith("content://")) {
             copyUriToFile(Uri.parse(originalApkPath), originalApkFile)
         } else {
             File(originalApkPath).copyTo(originalApkFile, true)
         }
 
-        // 1. Decompile Smali (Fast mode)
+        // 1. Decompile Smali
         val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
         configConstructor.isAccessible = true
         val config = configConstructor.newInstance() as brut.androlib.Config
@@ -58,17 +58,17 @@ class PatcherService(private val context: Context) {
         val decoder = ApkDecoder(config, brut.directory.ExtFile(originalApkFile))
         decoder.decode(decompiledDir)
         
-        // 2. Patch Smali & Manifest
+        // 2. Surgery
         injectSmaliHook(decompiledDir)
         injectSmapiNativeSmali(decompiledDir)
         injectSmapiCore(decompiledDir)
         
-        // 3. Build only the new DEX
+        // 3. Build new DEX
         val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
         builder.build(classesOnlyApk)
         
-        // 4. Perform Direct Injection (Preserves original alignment and libs)
-        performInjection(originalApkFile, classesOnlyApk, decompiledDir, finalUnsigned)
+        // 4. High-Precision Injection (Android 16 Compatible)
+        performAlignedInjection(originalApkFile, classesOnlyApk, decompiledDir, finalUnsigned)
 
         // 5. Sign
         signApk(finalUnsigned, signedApk)
@@ -79,33 +79,54 @@ class PatcherService(private val context: Context) {
         }
     }
 
-    private fun performInjection(baseApk: File, classesApk: File, decompiledDir: File, outputApk: File) {
-        Log.d(TAG, "Injecting patches into original APK structure...")
+    private fun performAlignedInjection(baseApk: File, classesApk: File, decompiledDir: File, outputApk: File) {
+        Log.d(TAG, "Injecting patches with 16KB alignment for Android 16...")
         
-        // Prepare patched Manifest
-        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
         val oldPkg = "com.chucklefish.stardewvalley"
-        val newPkg = "com.chucklefish.stardewvalle_" // Minimal 29-char patch
-        val patchedManifestBytes = replaceBytes(manifestFile.readBytes(), oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
+        val newPkg = "io.potatasmapi.launcher.patch" // Exactly 29 chars
+        
+        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
+        var manifestBytes = manifestFile.readBytes()
+        manifestBytes = replaceBytes(manifestBytes, oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
+        manifestBytes = replaceBytes(manifestBytes, oldPkg.toByteArray(Charsets.UTF_16LE), newPkg.toByteArray(Charsets.UTF_16LE))
 
-        ZipOutputStream(outputApk.outputStream()).use { zos ->
-            // 1. Copy everything from original APK EXCEPT what we want to replace
+        ZipOutputStream(outputApk.outputStream().buffered()).use { zos ->
+            // 1. Process original entries
             ZipFile(baseApk).use { zip ->
                 zip.entries().asSequence().forEach { entry ->
                     val name = entry.name
-                    // Skip files we are replacing
                     if (name == "AndroidManifest.xml" || name.endsWith(".dex") || 
-                        name.contains("icon") || name.contains("launcher") || name.contains("logo")) {
-                        return@forEach 
-                    }
+                        name.contains("ic_launcher") || name.contains("app_icon")) return@forEach
+
+                    val newEntry = ZipEntry(name)
                     
-                    zos.putNextEntry(ZipEntry(name))
-                    zip.getInputStream(entry).use { it.copyTo(zos) }
+                    // Native libraries MUST be uncompressed and aligned
+                    if (name.endsWith(".so")) {
+                        val bytes = zip.getInputStream(entry).readBytes()
+                        newEntry.method = ZipEntry.STORED
+                        newEntry.size = bytes.size.toLong()
+                        newEntry.compressedSize = bytes.size.toLong()
+                        val crc = CRC32()
+                        crc.update(bytes)
+                        newEntry.crc = crc.value
+                        
+                        zos.putNextEntry(newEntry)
+                        zos.write(bytes)
+                    } else {
+                        zos.putNextEntry(newEntry)
+                        zip.getInputStream(entry).use { it.copyTo(zos) }
+                    }
                     zos.closeEntry()
                 }
             }
 
-            // 2. Inject new classes.dex from the builder
+            // 2. Inject patched Manifest
+            val mEntry = ZipEntry("AndroidManifest.xml")
+            zos.putNextEntry(mEntry)
+            zos.write(manifestBytes)
+            zos.closeEntry()
+
+            // 3. Inject new DEX files
             ZipFile(classesApk).use { zip ->
                 zip.entries().asSequence().filter { it.name.endsWith(".dex") }.forEach { entry ->
                     zos.putNextEntry(ZipEntry(entry.name))
@@ -114,24 +135,14 @@ class PatcherService(private val context: Context) {
                 }
             }
 
-            // 3. Inject patched Manifest
-            zos.putNextEntry(ZipEntry("AndroidManifest.xml"))
-            zos.write(patchedManifestBytes)
-            zos.closeEntry()
-
-            // 4. Inject Modded Icons into every icon slot found in the original
+            // 4. Force Icon Replacement
             ZipFile(baseApk).use { zip ->
                 zip.entries().asSequence().forEach { entry ->
                     val name = entry.name
-                    if (name.contains("icon") || name.contains("launcher") || name.contains("logo")) {
+                    if (name.contains("ic_launcher") || name.contains("app_icon")) {
                         if (name.endsWith(".png") || name.endsWith(".webp")) {
                             zos.putNextEntry(ZipEntry(name))
                             context.assets.open("modded_icon.png").use { it.copyTo(zos) }
-                            zos.closeEntry()
-                        } else if (name.endsWith(".xml")) {
-                            // Simplify XML icons
-                            zos.putNextEntry(ZipEntry(name))
-                            zos.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n<background android:drawable=\"@android:color/black\"/>\n<foreground android:drawable=\"@mipmap/ic_launcher\"/>\n</adaptive-icon>".toByteArray())
                             zos.closeEntry()
                         }
                     }
