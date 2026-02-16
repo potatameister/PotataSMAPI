@@ -66,7 +66,7 @@ class PatcherService(private val context: Context) {
         try {
             renamePackage(decompiledDir)
             injectSmaliHook(decompiledDir)
-            injectSmapiNativeSmali(decompiledDir, config)
+            injectSmapiNativeSmali(decompiledDir)
             injectSmapiCore(decompiledDir)
         } catch (e: Exception) {
             throw Exception("Injection failed: ${e.message}")
@@ -103,15 +103,18 @@ class PatcherService(private val context: Context) {
     }
 
     private fun signApk(inputApk: File, outputApk: File) {
-        val ksFile = File(context.cacheDir, "patcher.jks")
+        val ksFile = File(context.cacheDir, "patcher.p12")
         if (!ksFile.exists()) {
-            context.assets.open("potata_patcher.jks").use { input ->
+            context.assets.open("potata_patcher.p12").use { input ->
                 ksFile.outputStream().use { output -> input.copyTo(output) }
             }
         }
 
-        val keystore = KeyStore.getInstance("JKS")
-        keystore.load(ksFile.inputStream(), KEYSTORE_PASS.toCharArray())
+        // Android prefers PKCS12 over JKS
+        val keystore = KeyStore.getInstance("PKCS12")
+        ksFile.inputStream().use { input ->
+            keystore.load(input, KEYSTORE_PASS.toCharArray())
+        }
         
         val privateKey = keystore.getKey(ALIAS, KEYSTORE_PASS.toCharArray()) as PrivateKey
         val cert = keystore.getCertificate(ALIAS) as X509Certificate
@@ -148,7 +151,7 @@ class PatcherService(private val context: Context) {
         Log.d(TAG, "Package renamed to $newPackage")
     }
 
-    private fun injectSmapiNativeSmali(decompiledDir: File, config: brut.androlib.Config) {
+    private fun injectSmapiNativeSmali(decompiledDir: File) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
         if (!smapiDir.exists()) smapiDir.mkdirs()
         

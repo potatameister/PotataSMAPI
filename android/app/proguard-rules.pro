@@ -47,6 +47,14 @@
 -dontwarn org.stringtemplate.v4.gui.**
 -dontwarn brut.androlib.res.decoder.**
 
+# APK Signing (apksig)
+-keep class com.android.apksig.** { *; }
+-dontwarn com.android.apksig.**
+
+# BouncyCastle (often used for keystores)
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+
 # General reflection safety
 -keepattributes Signature,AnnotationDefault,EnclosingMethod,InnerClasses,SourceFile,LineNumberTable
 -keep public class * extends android.app.Activity

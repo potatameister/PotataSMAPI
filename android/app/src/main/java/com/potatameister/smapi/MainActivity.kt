@@ -332,8 +332,9 @@ class MainActivity : ComponentActivity() {
                                             isPatched = true
                                             statusText = "Success!"
                                         } catch (e: Exception) {
-                                            statusText = "Surgery Failed"
-                                            Log.e("Potata", "Error: ${Log.getStackTraceString(e)}")
+                                            val fullTrace = Log.getStackTraceString(e)
+                                            statusText = "Surgery Failed: ${e.localizedMessage ?: "Unknown Error"}"
+                                            Log.e("Potata", "Error: $fullTrace")
                                         } finally { isPatching = false }
                                     }
                                 }
