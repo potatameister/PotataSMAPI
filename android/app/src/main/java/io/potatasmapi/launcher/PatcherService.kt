@@ -58,7 +58,7 @@ class PatcherService(private val context: Context) {
             throw Exception("Copy failed: ${e.message}")
         }
 
-        // 1. Decompile using Apktool Lib
+        // 1. Decompile
         try {
             val decoder = ApkDecoder(config, brut.directory.ExtFile(originalApkFile))
             decoder.decode(decompiledDir)
@@ -66,16 +66,10 @@ class PatcherService(private val context: Context) {
             throw Exception("Decompile failed: ${e.message}")
         }
         
-        // 2. Hook & Inject
+        // 2. Surgery
         try {
-            // SIDE-BY-SIDE FIX: Patch binary manifest directly
-            // Original (29): com.chucklefish.stardewvalley
-            // New (29):      io.potatasmapi.launcher.patch
             patchBinaryManifest(decompiledDir)
-            
-            // ICON FIX: Replace game icons with modded version
             patchGameIcons(decompiledDir)
-            
             injectSmaliHook(decompiledDir)
             injectSmapiNativeSmali(decompiledDir)
             injectSmapiCore(decompiledDir)
@@ -83,20 +77,19 @@ class PatcherService(private val context: Context) {
             throw Exception("Injection failed: ${e.message}")
         }
         
-        // 3. Rebuild (Using ApkBuilder)
+        // 3. Rebuild
         try {
-            Log.d(TAG, "Rebuilding APK into: ${unsignedApk.absolutePath}")
+            Log.d(TAG, "Rebuilding APK...")
             val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
             builder.build(unsignedApk)
-            Log.d(TAG, "ApkBuilder finished. Unsigned APK exists: ${unsignedApk.exists()}")
         } catch (e: Exception) {
             Log.e(TAG, "Rebuild CRASHED: ${Log.getStackTraceString(e)}")
             throw Exception("Rebuild failed: ${e.message}")
         }
         
-        // 4. Sign
+        // 4. Sign (Upgraded to V3 for Android 16 compatibility)
         try {
-            Log.d(TAG, "Signing APK...")
+            Log.d(TAG, "Signing APK (V1, V2, V3)...")
             signApk(unsignedApk, signedApk)
         } catch (e: Exception) {
             Log.e(TAG, "Signing FAILED: ${Log.getStackTraceString(e)}")
@@ -115,40 +108,32 @@ class PatcherService(private val context: Context) {
     private fun patchBinaryManifest(decompiledDir: File) {
         val manifestFile = File(decompiledDir, "AndroidManifest.xml")
         if (!manifestFile.exists()) return
-
-        // MUST BE EXACTLY 29 CHARACTERS
         val oldPkg = "com.chucklefish.stardewvalley"
         val newPkg = "io.potatasmapi.launcher.patch"
-
-        Log.d(TAG, "Binary patching manifest for side-by-side install (29 chars)...")
-        
         val bytes = manifestFile.readBytes()
-        val oldBytesUtf8 = oldPkg.toByteArray(Charsets.UTF_8)
-        val newBytesUtf8 = newPkg.toByteArray(Charsets.UTF_8)
-        val oldBytesUtf16 = oldPkg.toByteArray(Charsets.UTF_16LE)
-        val newBytesUtf16 = newPkg.toByteArray(Charsets.UTF_16LE)
-
-        var patchedBytes = bytes
-        patchedBytes = replaceBytes(patchedBytes, oldBytesUtf8, newBytesUtf8)
-        patchedBytes = replaceBytes(patchedBytes, oldBytesUtf16, newBytesUtf16)
-
+        var patchedBytes = replaceBytes(bytes, oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
+        patchedBytes = replaceBytes(patchedBytes, oldPkg.toByteArray(Charsets.UTF_16LE), newPkg.toByteArray(Charsets.UTF_16LE))
         manifestFile.writeBytes(patchedBytes)
-        Log.d(TAG, "Binary manifest patched successfully.")
     }
 
     private fun patchGameIcons(decompiledDir: File) {
-        Log.d(TAG, "Replacing game icons with modded version...")
+        Log.d(TAG, "Scanning for game icons...")
         val resDir = File(decompiledDir, "res")
         if (!resDir.exists()) return
 
-        resDir.walkTopDown().filter { it.name == "ic_launcher.png" || it.name == "icon.png" }.forEach { iconFile ->
-            try {
-                context.assets.open("modded_icon.png").use { input ->
-                    iconFile.outputStream().use { output -> input.copyTo(output) }
+        // Stardew Valley sometimes uses 'icon.png' or 'app_icon.png'
+        val iconNames = listOf("ic_launcher.png", "icon.png", "app_icon.png", "ic_launcher_foreground.png")
+        
+        resDir.walkTopDown().forEach { file ->
+            if (iconNames.contains(file.name)) {
+                try {
+                    context.assets.open("modded_icon.png").use { input ->
+                        file.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    Log.d(TAG, "Replaced icon: ${file.absolutePath}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to replace icon ${file.name}", e)
                 }
-                Log.d(TAG, "Patched icon: ${iconFile.absolutePath}")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to patch icon ${iconFile.name}", e)
             }
         }
     }
@@ -160,19 +145,12 @@ class PatcherService(private val context: Context) {
         while (i <= result.size - old.size) {
             var match = true
             for (j in old.indices) {
-                if (result[i + j] != old[j]) {
-                    match = false
-                    break
-                }
+                if (result[i + j] != old[j]) { match = false; break }
             }
             if (match) {
-                for (j in new.indices) {
-                    result[i + j] = new[j]
-                }
+                for (j in new.indices) { result[i + j] = new[j] }
                 i += old.size
-            } else {
-                i++
-            }
+            } else { i++ }
         }
         return result
     }
@@ -189,11 +167,13 @@ class PatcherService(private val context: Context) {
         val privateKey = keystore.getKey(ALIAS, KEYSTORE_PASS.toCharArray()) as PrivateKey
         val cert = keystore.getCertificate(ALIAS) as X509Certificate
         val signerConfig = ApkSigner.SignerConfig.Builder(ALIAS, privateKey, listOf(cert)).build()
+        
         ApkSigner.Builder(listOf(signerConfig))
             .setInputApk(inputApk)
             .setOutputApk(outputApk)
             .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
+            .setV3SigningEnabled(true) // Stronger signature for Android 16
             .setMinSdkVersion(24)
             .build()
             .sign()
@@ -210,8 +190,6 @@ class PatcherService(private val context: Context) {
                 "    const-string v0, \"SmapiNative\"\n" +
                 "    const-string v1, \"SMAPI Bootstrapping (Modded)...\"\n" +
                 "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
-                "    \n" +
-                "    # Set EarlyConstants.AndroidBaseDirPath = /sdcard/PotataSMAPI\n" +
                 "    const-string v0, \"/sdcard/PotataSMAPI\"\n" +
                 "    invoke-static {v0}, LStardewModdingAPI/EarlyConstants;->set_AndroidBaseDirPath(Ljava/lang/String;)V\n" +
                 "    return-void\n" +
@@ -239,6 +217,7 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiCore(decompiledDir: File) {
         var assemblyDir = File(decompiledDir, "assets/bin/Data/Managed")
+        if (!assemblyDir.exists()) assemblyDir = File(decompiledDir, "assets/assemblies")
         if (!assemblyDir.exists()) assemblyDir.mkdirs()
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
     }
