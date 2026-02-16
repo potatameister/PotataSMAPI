@@ -1,4 +1,4 @@
-package io.potatasmapi.manager
+package io.potatasmapi.launcher
 
 import android.app.Application
 import android.util.Log

@@ -1,4 +1,4 @@
-package io.potatasmapi.manager
+package io.potatasmapi.launcher
 
 import org.junit.Test
 import org.junit.Assert.*

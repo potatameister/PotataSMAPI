@@ -1,4 +1,4 @@
-package io.potatasmapi.manager
+package io.potatasmapi.launcher
 
 import android.content.Context
 import android.content.Intent
@@ -69,7 +69,12 @@ class PatcherService(private val context: Context) {
         // 2. Hook & Inject
         try {
             // SIDE-BY-SIDE FIX: Patch binary manifest directly
+            // Original (29): com.chucklefish.stardewvalley
+            // New (29):      io.potatasmapi.launcher.patch
             patchBinaryManifest(decompiledDir)
+            
+            // ICON FIX: Replace game icons with modded version
+            patchGameIcons(decompiledDir)
             
             injectSmaliHook(decompiledDir)
             injectSmapiNativeSmali(decompiledDir)
@@ -111,19 +116,15 @@ class PatcherService(private val context: Context) {
         val manifestFile = File(decompiledDir, "AndroidManifest.xml")
         if (!manifestFile.exists()) return
 
-        // We use a 28-character replacement to keep the binary structure intact.
-        // Original: com.chucklefish.stardewvalley (28)
-        // New:      io.potatasmapi.manager.patch (28)
+        // MUST BE EXACTLY 29 CHARACTERS
         val oldPkg = "com.chucklefish.stardewvalley"
-        val newPkg = "io.potatasmapi.manager.patch"
+        val newPkg = "io.potatasmapi.launcher.patch"
 
-        Log.d(TAG, "Binary patching manifest for side-by-side install...")
+        Log.d(TAG, "Binary patching manifest for side-by-side install (29 chars)...")
         
         val bytes = manifestFile.readBytes()
         val oldBytesUtf8 = oldPkg.toByteArray(Charsets.UTF_8)
         val newBytesUtf8 = newPkg.toByteArray(Charsets.UTF_8)
-        
-        // Binary XML uses UTF-16LE for strings usually
         val oldBytesUtf16 = oldPkg.toByteArray(Charsets.UTF_16LE)
         val newBytesUtf16 = newPkg.toByteArray(Charsets.UTF_16LE)
 
@@ -135,8 +136,25 @@ class PatcherService(private val context: Context) {
         Log.d(TAG, "Binary manifest patched successfully.")
     }
 
+    private fun patchGameIcons(decompiledDir: File) {
+        Log.d(TAG, "Replacing game icons with modded version...")
+        val resDir = File(decompiledDir, "res")
+        if (!resDir.exists()) return
+
+        resDir.walkTopDown().filter { it.name == "ic_launcher.png" || it.name == "icon.png" }.forEach { iconFile ->
+            try {
+                context.assets.open("modded_icon.png").use { input ->
+                    iconFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                Log.d(TAG, "Patched icon: ${iconFile.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to patch icon ${iconFile.name}", e)
+            }
+        }
+    }
+
     private fun replaceBytes(source: ByteArray, old: ByteArray, new: ByteArray): ByteArray {
-        if (old.size != new.size) return source // Safety check
+        if (old.size != new.size) return source
         val result = source.copyOf()
         var i = 0
         while (i <= result.size - old.size) {
@@ -182,9 +200,9 @@ class PatcherService(private val context: Context) {
     }
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
-        val smapiDir = File(decompiledDir, "smali/io/potatasmapi/manager")
+        val smapiDir = File(decompiledDir, "smali/io/potatasmapi/launcher")
         if (!smapiDir.exists()) smapiDir.mkdirs()
-        val smaliCode = ".class public Lio/potatasmapi/manager/SmapiNative;\n" +
+        val smaliCode = ".class public Lio/potatasmapi/launcher/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
                 ".source \"SmapiNative.java\"\n\n" +
                 ".method public static init()V\n" +
@@ -211,7 +229,7 @@ class PatcherService(private val context: Context) {
             for (line in lines) {
                 output.append(line).append("\n")
                 if (!hooked && line.contains("onCreate(Landroid/os/Bundle;)V")) {
-                    output.append("    invoke-static {}, Lio/potatasmapi/manager/SmapiNative;->init()V\n")
+                    output.append("    invoke-static {}, Lio/potatasmapi/launcher/SmapiNative;->init()V\n")
                     hooked = true
                 }
             }
