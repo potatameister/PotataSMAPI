@@ -181,35 +181,22 @@ class MainActivity : ComponentActivity() {
 
     private fun triggerManualInstall() {
         val patchedFile = File(externalCacheDir, "patch_workspace/modded_stardew.apk")
-        Log.d("Potata", "Attempting to install: ${patchedFile.absolutePath} (exists: ${patchedFile.exists()})")
-        
         if (patchedFile.exists()) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
-                    return
-                }
-
                 val uri = androidx.core.content.FileProvider.getUriForFile(
                     this,
                     "$packageName.fileprovider",
                     patchedFile
                 )
-                Log.d("Potata", "Installation URI: $uri")
-                
-                val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, "application/vnd.android.package-archive")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
-                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
                 }
                 startActivity(intent)
             } catch (e: Exception) {
                 Log.e("Potata", "Installation failed: ${Log.getStackTraceString(e)}")
             }
-        } else {
-            Log.e("Potata", "Patched file not found at: ${patchedFile.absolutePath}")
         }
     }
 

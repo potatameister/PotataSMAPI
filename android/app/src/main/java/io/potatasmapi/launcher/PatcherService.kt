@@ -117,22 +117,40 @@ class PatcherService(private val context: Context) {
     }
 
     private fun patchGameIcons(decompiledDir: File) {
-        Log.d(TAG, "Scanning for game icons...")
+        Log.d(TAG, "Replacing game icons with modded version...")
         val resDir = File(decompiledDir, "res")
         if (!resDir.exists()) return
 
-        // Stardew Valley sometimes uses 'icon.png' or 'app_icon.png'
-        val iconNames = listOf("ic_launcher.png", "icon.png", "app_icon.png", "ic_launcher_foreground.png")
+        // Targeted names for Stardew launcher icons
+        val targetNames = listOf("ic_launcher", "icon", "app_icon", "ic_launcher_round", "ic_launcher_foreground")
         
         resDir.walkTopDown().forEach { file ->
-            if (iconNames.contains(file.name)) {
+            val nameWithoutExt = file.nameWithoutExtension
+            if (targetNames.contains(nameWithoutExt)) {
                 try {
-                    context.assets.open("modded_icon.png").use { input ->
-                        file.outputStream().use { output -> input.copyTo(output) }
+                    when (file.extension.lowercase()) {
+                        "png", "webp" -> {
+                            context.assets.open("modded_icon.png").use { input ->
+                                file.outputStream().use { output -> input.copyTo(output) }
+                            }
+                        }
+                        "xml" -> {
+                            // If it's an adaptive icon XML, we force it to a simple bitmap icon
+                            // to ensure our new PNG is used.
+                            val simpleXml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+                                    "<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n" +
+                                    "    <background android:drawable=\"@android:color/black\"/>\n" +
+                                    "    <foreground android:drawable=\"@mipmap/ic_launcher\"/>\n" +
+                                    "</adaptive-icon>"
+                            // Only overwrite if it looks like a launcher XML
+                            if (file.readText().contains("adaptive-icon")) {
+                                file.writeText(simpleXml)
+                            }
+                        }
                     }
-                    Log.d(TAG, "Replaced icon: ${file.absolutePath}")
+                    Log.d(TAG, "Patched resource: ${file.absolutePath}")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to replace icon ${file.name}", e)
+                    Log.e(TAG, "Failed to patch ${file.name}", e)
                 }
             }
         }
@@ -224,11 +242,11 @@ class PatcherService(private val context: Context) {
 
     private fun installApk(file: File) {
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+        Log.d(TAG, "Triggering install for URI: $uri")
+        val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
         }
         context.startActivity(intent)
     }
