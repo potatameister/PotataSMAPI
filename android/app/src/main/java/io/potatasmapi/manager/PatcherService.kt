@@ -1,4 +1,4 @@
-package io.potatasmapi
+package io.potatasmapi.manager
 
 import android.content.Context
 import android.content.Intent
@@ -83,6 +83,7 @@ class PatcherService(private val context: Context) {
             Log.d(TAG, "Rebuilding APK into: ${unsignedApk.absolutePath}")
             val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
             builder.build(unsignedApk)
+            Log.d(TAG, "ApkBuilder finished. Unsigned APK exists: ${unsignedApk.exists()}")
         } catch (e: Exception) {
             Log.e(TAG, "Rebuild CRASHED: ${Log.getStackTraceString(e)}")
             throw Exception("Rebuild failed: ${e.message}")
@@ -112,9 +113,9 @@ class PatcherService(private val context: Context) {
 
         // We use a 28-character replacement to keep the binary structure intact.
         // Original: com.chucklefish.stardewvalley (28)
-        // New:      io.potatasmapi.stardew_valley (28)
+        // New:      io.potatasmapi.manager.patch (28)
         val oldPkg = "com.chucklefish.stardewvalley"
-        val newPkg = "io.potatasmapi.stardew_valley"
+        val newPkg = "io.potatasmapi.manager.patch"
 
         Log.d(TAG, "Binary patching manifest for side-by-side install...")
         
@@ -181,9 +182,9 @@ class PatcherService(private val context: Context) {
     }
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
-        val smapiDir = File(decompiledDir, "smali/io/potatasmapi")
+        val smapiDir = File(decompiledDir, "smali/io/potatasmapi/manager")
         if (!smapiDir.exists()) smapiDir.mkdirs()
-        val smaliCode = ".class public Lio/potatasmapi/SmapiNative;\n" +
+        val smaliCode = ".class public Lio/potatasmapi/manager/SmapiNative;\n" +
                 ".super Ljava/lang/Object;\n" +
                 ".source \"SmapiNative.java\"\n\n" +
                 ".method public static init()V\n" +
@@ -191,6 +192,8 @@ class PatcherService(private val context: Context) {
                 "    const-string v0, \"SmapiNative\"\n" +
                 "    const-string v1, \"SMAPI Bootstrapping (Modded)...\"\n" +
                 "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
+                "    \n" +
+                "    # Set EarlyConstants.AndroidBaseDirPath = /sdcard/PotataSMAPI\n" +
                 "    const-string v0, \"/sdcard/PotataSMAPI\"\n" +
                 "    invoke-static {v0}, LStardewModdingAPI/EarlyConstants;->set_AndroidBaseDirPath(Ljava/lang/String;)V\n" +
                 "    return-void\n" +
@@ -208,7 +211,7 @@ class PatcherService(private val context: Context) {
             for (line in lines) {
                 output.append(line).append("\n")
                 if (!hooked && line.contains("onCreate(Landroid/os/Bundle;)V")) {
-                    output.append("    invoke-static {}, Lio/potatasmapi/SmapiNative;->init()V\n")
+                    output.append("    invoke-static {}, Lio/potatasmapi/manager/SmapiNative;->init()V\n")
                     hooked = true
                 }
             }
@@ -218,7 +221,6 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiCore(decompiledDir: File) {
         var assemblyDir = File(decompiledDir, "assets/bin/Data/Managed")
-        if (!assemblyDir.exists()) assemblyDir = File(decompiledDir, "assets/assemblies")
         if (!assemblyDir.exists()) assemblyDir.mkdirs()
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
     }
