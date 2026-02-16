@@ -67,7 +67,7 @@ class VirtualLauncher(private val context: Context) {
 
             // 5. Hook the Activity Thread (The "Brain" of the App)
             PotataApp.addLog("Redirecting System Context...")
-            injectVirtualLoader(classLoader, baseApk.absolutePath)
+            injectVirtualLoader(classLoader, dexPath)
 
             // 5.5 Hook Resources globally
             injectVirtualResources(dexPath)
@@ -94,11 +94,14 @@ class VirtualLauncher(private val context: Context) {
 
     /**
      * This is the "Magic" step. It tells the Android system to use our 
-     * custom ClassLoader when it tries to start the game's activities.
+     * custom ClassLoader and paths when it tries to start the game's activities.
      */
     @SuppressLint("DiscouragedPrivateApi")
-    private fun injectVirtualLoader(classLoader: ClassLoader, apkPath: String) {
+    private fun injectVirtualLoader(classLoader: ClassLoader, dexPath: String) {
         try {
+            val apkPaths = dexPath.split(File.pathSeparator).toTypedArray()
+            val baseApk = apkPaths[0]
+
             // Get ActivityThread
             val activityThreadClass = Class.forName("android.app.ActivityThread")
             val currentActivityThreadMethod = activityThreadClass.getDeclaredMethod("currentActivityThread")
@@ -114,13 +117,30 @@ class VirtualLauncher(private val context: Context) {
             val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
             val loadedApk = loadedApkWeakRef.get() ?: return
 
-            // Force our custom ClassLoader into the system record
+            // Force our custom ClassLoader and paths into the system record
             val loadedApkClass = Class.forName("android.app.LoadedApk")
+            
+            // 1. Swap ClassLoader
             val mClassLoaderField = loadedApkClass.getDeclaredField("mClassLoader")
             mClassLoaderField.isAccessible = true
             mClassLoaderField.set(loadedApk, classLoader)
+
+            // 2. Update Paths (important for resources and activity instantiation)
+            val mAppDirField = loadedApkClass.getDeclaredField("mAppDir")
+            mAppDirField.isAccessible = true
+            mAppDirField.set(loadedApk, baseApk)
+
+            val mResDirField = loadedApkClass.getDeclaredField("mResDir")
+            mResDirField.isAccessible = true
+            mResDirField.set(loadedApk, baseApk)
+
+            if (apkPaths.size > 1) {
+                val mSplitSourceDirsField = loadedApkClass.getDeclaredField("mSplitSourceDirs")
+                mSplitSourceDirsField.isAccessible = true
+                mSplitSourceDirsField.set(loadedApk, apkPaths)
+            }
             
-            PotataApp.addLog("System ClassLoader Swapped.")
+            PotataApp.addLog("System ClassLoader & Paths Swapped.")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to inject classloader", e)
             throw e

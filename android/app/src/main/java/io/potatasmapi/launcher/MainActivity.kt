@@ -352,6 +352,7 @@ class MainActivity : ComponentActivity() {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
                                 onClick = { 
+                                    android.widget.Toast.makeText(this@MainActivity, "Launching: ${stardewData.second}", android.widget.Toast.LENGTH_SHORT).show()
                                     VirtualLauncher(this@MainActivity).launch(stardewData.second)
                                 },
                                 modifier = Modifier.weight(1f).height(56.dp),
