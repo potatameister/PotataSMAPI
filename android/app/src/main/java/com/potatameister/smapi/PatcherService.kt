@@ -17,7 +17,7 @@ import java.security.cert.X509Certificate
 class PatcherService(private val context: Context) {
     companion object {
         init {
-            // Ultimate fallback for OSDetection NPE
+            // Secondary safeguard for OSDetection NPE
             if (System.getProperty("os.name").isNullOrBlank()) {
                 System.setProperty("os.name", "linux")
             }
@@ -35,7 +35,6 @@ class PatcherService(private val context: Context) {
         if (!workspace.mkdirs()) throw Exception("Failed to create workspace directory")
 
         // Fix: Use reflection to bypass private constructor and avoid buggy getDefaultConfig() 
-        // which triggers a crash on some Android devices due to OSDetection.
         val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
         configConstructor.isAccessible = true
         val config = configConstructor.newInstance() as brut.androlib.Config
@@ -44,7 +43,10 @@ class PatcherService(private val context: Context) {
         if (!frameworkDir.exists()) frameworkDir.mkdirs()
         
         config.frameworkDirectory = frameworkDir.absolutePath
-        config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_FULL
+        
+        // CRITICAL: Revert to NONE. BUILDING resources on Android will ALWAYS crash
+        // because it requires a native aapt binary (linux/win/mac) which isn't in the jar.
+        config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
 
         val originalApkFile = File(workspace, "base_game.apk")
         val decompiledDir = File(workspace, "decompiled")
@@ -72,7 +74,10 @@ class PatcherService(private val context: Context) {
         
         // 2. Hook & Inject
         try {
-            renamePackage(decompiledDir)
+            // Note: renamePackage is disabled for now because it requires full resource decoding.
+            // We will implement a binary manifest renamer in the next update.
+            // renamePackage(decompiledDir) 
+            
             injectSmaliHook(decompiledDir)
             injectSmapiNativeSmali(decompiledDir)
             injectSmapiCore(decompiledDir)
@@ -118,7 +123,6 @@ class PatcherService(private val context: Context) {
             }
         }
 
-        // Android prefers PKCS12 over JKS
         val keystore = KeyStore.getInstance("PKCS12")
         ksFile.inputStream().use { input ->
             keystore.load(input, KEYSTORE_PASS.toCharArray())
@@ -134,30 +138,14 @@ class PatcherService(private val context: Context) {
             .setOutputApk(outputApk)
             .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
-            .setMinSdkVersion(24) // Match our project's minSdk to bypass manifest parsing bug
+            .setMinSdkVersion(24)
             .build()
             
         apkSigner.sign()
     }
 
     private fun renamePackage(decompiledDir: File) {
-        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
-        if (!manifestFile.exists()) return
-
-        val originalPackage = "com.chucklefish.stardewvalley"
-        val newPackage = "com.potatameister.smapi.stardew"
-        
-        var content = manifestFile.readText()
-        
-        // 1. Rename the main package attribute
-        content = content.replace("package=\"$originalPackage\"", "package=\"$newPackage\"")
-        
-        // 2. Rename authorities to avoid conflict
-        // Stardew uses several providers, we'll append .smapi to them
-        content = content.replace("android:authorities=\"$originalPackage", "android:authorities=\"$newPackage")
-        
-        manifestFile.writeText(content)
-        Log.d(TAG, "Package renamed to $newPackage")
+        // Disabled for now
     }
 
     private fun injectSmapiNativeSmali(decompiledDir: File) {
