@@ -15,6 +15,14 @@ import java.security.PrivateKey
 import java.security.cert.X509Certificate
 
 class PatcherService(private val context: Context) {
+    companion object {
+        init {
+            // Ultimate fallback for OSDetection NPE
+            if (System.getProperty("os.name").isNullOrBlank()) {
+                System.setProperty("os.name", "linux")
+            }
+        }
+    }
     private val TAG = "PotataPatcher"
     private val KEYSTORE_PASS = "potata-patcher-key-2026"
     private val ALIAS = "potata_patcher"
