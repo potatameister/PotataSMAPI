@@ -85,6 +85,14 @@ class PatcherService(private val context: Context) {
                     target.parentFile?.mkdirs()
                     zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
                 }
+
+                // 4. Inject SMAPI Engine
+                log("Injecting SMAPI Core...")
+                context.assets.open("StardewModdingAPI.dll").use { input ->
+                    File(virtualRoot, "StardewModdingAPI.dll").outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
             }
             
             log("Import Successful!")

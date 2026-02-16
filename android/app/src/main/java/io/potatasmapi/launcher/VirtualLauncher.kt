@@ -52,10 +52,14 @@ class VirtualLauncher(private val context: Context) {
             PotataApp.addLog("Redirecting System Context...")
             injectVirtualLoader(classLoader, baseApk.absolutePath)
 
-            // 4. Launch the Proxy Shell
-            PotataApp.addLog("Executing Proxy Shell...")
+            // 3.5 Hook Resources globally
+            injectVirtualResources(baseApk.absolutePath)
+
+            // 4. Launch the Game Activity
+            PotataApp.addLog("Executing Virtual Core...")
             
-            val intent = Intent(context, ProxyActivity::class.java).apply {
+            val intent = Intent().apply {
+                setClassName(context.packageName, "com.chucklefish.stardewvalley.StardewValley")
                 putExtra("VIRTUAL_MODE", true)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -103,6 +107,50 @@ class VirtualLauncher(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to inject classloader", e)
             throw e
+        }
+    }
+
+    /**
+     * Injects the game APK into the resource search path.
+     */
+    @SuppressLint("DiscouragedPrivateApi")
+    private fun injectVirtualResources(apkPath: String) {
+        try {
+            val activityThreadClass = Class.forName("android.app.ActivityThread")
+            val currentActivityThreadMethod = activityThreadClass.getDeclaredMethod("currentActivityThread")
+            currentActivityThreadMethod.isAccessible = true
+            val currentActivityThread = currentActivityThreadMethod.invoke(null)
+
+            val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
+            mPackagesField.isAccessible = true
+            val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
+
+            val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
+            val loadedApk = loadedApkWeakRef.get() ?: return
+
+            val loadedApkClass = Class.forName("android.app.LoadedApk")
+            
+            // Add to mSplitResDirs
+            val mSplitResDirsField = loadedApkClass.getDeclaredField("mSplitResDirs")
+            mSplitResDirsField.isAccessible = true
+            val currentDirs = mSplitResDirsField.get(loadedApk) as? Array<String>
+            val newDirs = if (currentDirs == null) {
+                arrayOf(apkPath)
+            } else {
+                if (currentDirs.contains(apkPath)) return
+                currentDirs + apkPath
+            }
+            mSplitResDirsField.set(loadedApk, newDirs)
+
+            // Force resources refresh
+            val mResourcesField = loadedApkClass.getDeclaredField("mResources")
+            mResourcesField.isAccessible = true
+            mResourcesField.set(loadedApk, null)
+
+            PotataApp.addLog("System Resources Augmented.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inject resources", e)
+            PotataApp.addLog("Warning: Resource injection failed.")
         }
     }
 }
