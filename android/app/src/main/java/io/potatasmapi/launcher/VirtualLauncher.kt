@@ -29,6 +29,11 @@ class VirtualLauncher(private val context: Context) {
                 throw Exception("Virtual environment not ready. Please import first.")
             }
 
+            // Enforce read-only for security (Android restriction)
+            if (baseApk.canWrite()) {
+                baseApk.setReadOnly()
+            }
+
             PotataApp.addLog("Initializing Virtual Engine...")
 
             // 1. Prepare Paths

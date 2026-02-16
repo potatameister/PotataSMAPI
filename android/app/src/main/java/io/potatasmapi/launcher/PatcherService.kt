@@ -40,6 +40,7 @@ class PatcherService(private val context: Context) {
         // Keep the APK for resource mapping and code loading
         val virtualApk = File(virtualRoot, "base.apk")
         sourceFile.copyTo(virtualApk, overwrite = true)
+        virtualApk.setReadOnly() // Required by Android to load DEX code safely
 
         try {
             log("Architecture: ${Build.SUPPORTED_ABIS.joinToString()}")
