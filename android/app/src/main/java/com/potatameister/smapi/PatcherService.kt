@@ -126,6 +126,7 @@ class PatcherService(private val context: Context) {
             .setOutputApk(outputApk)
             .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
+            .setMinSdkVersion(24) // Match our project's minSdk to bypass manifest parsing bug
             .build()
             
         apkSigner.sign()
