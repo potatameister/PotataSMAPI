@@ -68,6 +68,7 @@ dependencies {
     
     // Apktool Dependencies
     implementation 'org.apktool:apktool-lib:2.9.3'
+    implementation 'com.android.tools.build:apksig:8.2.2'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

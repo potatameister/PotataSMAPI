@@ -9,9 +9,15 @@ import java.io.FileOutputStream
 import java.util.Scanner
 import brut.androlib.ApkDecoder
 import brut.directory.ExtFile
+import com.android.apksig.ApkSigner
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.cert.X509Certificate
 
 class PatcherService(private val context: Context) {
     private val TAG = "PotataPatcher"
+    private val KEYSTORE_PASS = "potata-patcher-key-2026"
+    private val ALIAS = "potata_patcher"
 
     fun patchGame(originalApkPath: String) {
         Log.d(TAG, "Starting stable digital surgery for: $originalApkPath")
@@ -60,7 +66,7 @@ class PatcherService(private val context: Context) {
         try {
             renamePackage(decompiledDir)
             injectSmaliHook(decompiledDir)
-            injectSmapiNativeSmali(decompiledDir)
+            injectSmapiNativeSmali(decompiledDir, config)
             injectSmapiCore(decompiledDir)
         } catch (e: Exception) {
             throw Exception("Injection failed: ${e.message}")
@@ -68,28 +74,58 @@ class PatcherService(private val context: Context) {
         
         // 3. Rebuild (Using ApkBuilder)
         try {
-            Log.d(TAG, "Rebuilding APK...")
-            // Fix: Use the (Config, ExtFile) constructor to avoid the internal call to Config.getDefaultConfig()
-            // which crashes on Android due to OSDetection.
+            Log.d(TAG, "Rebuilding APK into: ${unsignedApk.absolutePath}")
             val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
             builder.build(unsignedApk)
+            Log.d(TAG, "ApkBuilder finished. Unsigned APK exists: ${unsignedApk.exists()}")
         } catch (e: Exception) {
+            Log.e(TAG, "Rebuild CRASHED: ${Log.getStackTraceString(e)}")
             throw Exception("Rebuild failed: ${e.message}")
         }
         
-        // 4. Sign (Simple debug signing placeholder - in production use a real signer)
-        // For now, we move it to the final destination. 
-        // Note: Android requires the APK to be signed. 
-        // We will assume the build output needs signing or is handled by a helper.
+        // 4. Sign
+        try {
+            Log.d(TAG, "Signing APK...")
+            signApk(unsignedApk, signedApk)
+            Log.d(TAG, "Signing successful!")
+        } catch (e: Exception) {
+            Log.e(TAG, "Signing FAILED: ${Log.getStackTraceString(e)}")
+            throw Exception("Signing failed: ${e.message}")
+        }
         
         // Finalize
-        if (unsignedApk.exists()) {
-            unsignedApk.copyTo(signedApk, true)
-            Log.d(TAG, "Surgery Complete. Triggering installation...")
+        if (signedApk.exists()) {
+            Log.d(TAG, "Surgery Complete. Final APK: ${signedApk.absolutePath} (${signedApk.length()} bytes)")
             installApk(signedApk)
         } else {
-            throw Exception("Failed to generate rebuilt APK")
+            throw Exception("Failed to generate final signed APK")
         }
+    }
+
+    private fun signApk(inputApk: File, outputApk: File) {
+        val ksFile = File(context.cacheDir, "patcher.jks")
+        if (!ksFile.exists()) {
+            context.assets.open("potata_patcher.jks").use { input ->
+                ksFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+
+        val keystore = KeyStore.getInstance("JKS")
+        keystore.load(ksFile.inputStream(), KEYSTORE_PASS.toCharArray())
+        
+        val privateKey = keystore.getKey(ALIAS, KEYSTORE_PASS.toCharArray()) as PrivateKey
+        val cert = keystore.getCertificate(ALIAS) as X509Certificate
+        
+        val signerConfig = ApkSigner.SignerConfig.Builder(ALIAS, privateKey, listOf(cert)).build()
+        
+        val apkSigner = ApkSigner.Builder(listOf(signerConfig))
+            .setInputApk(inputApk)
+            .setOutputApk(outputApk)
+            .setV1SigningEnabled(true)
+            .setV2SigningEnabled(true)
+            .build()
+            
+        apkSigner.sign()
     }
 
     private fun renamePackage(decompiledDir: File) {
@@ -112,7 +148,7 @@ class PatcherService(private val context: Context) {
         Log.d(TAG, "Package renamed to $newPackage")
     }
 
-    private fun injectSmapiNativeSmali(decompiledDir: File) {
+    private fun injectSmapiNativeSmali(decompiledDir: File, config: brut.androlib.Config) {
         val smapiDir = File(decompiledDir, "smali/com/potatameister/smapi")
         if (!smapiDir.exists()) smapiDir.mkdirs()
         
