@@ -6,7 +6,6 @@ import android.net.Uri
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
-import java.io.RandomAccessFile
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import java.util.zip.ZipEntry
@@ -90,27 +89,39 @@ class PatcherService(private val context: Context) {
 
     private fun performPrecisionInjection(baseApk: File, classesApk: File, decompiledDir: File, outputApk: File) {
         val oldPkg = "com.chucklefish.stardewvalley"
-        val newPkg = "io.potatasmapi.launcher.patch"
+        val newPkg = "io.potatasmapi.launcher.patch" // Exactly 29 chars
         
+        // 1. Patch Manifest
         val manifestFile = File(decompiledDir, "AndroidManifest.xml")
         var manifestBytes = manifestFile.readBytes()
         manifestBytes = replaceBytes(manifestBytes, oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
         manifestBytes = replaceBytes(manifestBytes, oldPkg.toByteArray(Charsets.UTF_16LE), newPkg.toByteArray(Charsets.UTF_16LE))
 
-        val zos = ZipOutputStream(FileOutputStream(outputApk).buffered())
+        // 2. Patch Resources.arsc (CRITICAL FIX for Compatibility)
+        log("Patching resources.arsc...")
+        var arscBytes: ByteArray? = null
+        ZipFile(baseApk).use { zip ->
+            val entry = zip.getEntry("resources.arsc")
+            if (entry != null) {
+                arscBytes = zip.getInputStream(entry).readBytes()
+                arscBytes = replaceBytes(arscBytes!!, oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
+                arscBytes = replaceBytes(arscBytes!!, oldPkg.toByteArray(Charsets.UTF_16LE), newPkg.toByteArray(Charsets.UTF_16LE))
+            }
+        }
+
+        val fos = FileOutputStream(outputApk)
+        val zos = ZipOutputStream(fos.buffered())
 
         ZipFile(baseApk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name
-                // Skip files we're replacing
-                if (name == "AndroidManifest.xml" || name.endsWith(".dex") || 
+                if (name == "AndroidManifest.xml" || name == "resources.arsc" || name.endsWith(".dex") || 
                     name.contains("ic_launcher") || name.contains("app_icon") || name.contains("logo")) return@forEach
 
-                val newEntry = ZipEntry(name)
-                
                 if (name.endsWith(".so")) {
-                    // STORED and Aligned for Android 16
+                    // Android 16 requires 16KB (16384) alignment for STORED .so files
                     val bytes = zip.getInputStream(entry).readBytes()
+                    val newEntry = ZipEntry(name)
                     newEntry.method = ZipEntry.STORED
                     newEntry.size = bytes.size.toLong()
                     newEntry.compressedSize = bytes.size.toLong()
@@ -118,9 +129,6 @@ class PatcherService(private val context: Context) {
                     crc.update(bytes)
                     newEntry.crc = crc.value
                     
-                    // Note: True 16KB alignment requires padding the 'extra' field.
-                    // Standard ZipOutputStream doesn't reveal current offset, but 
-                    // we'll use STORED which is the first step.
                     zos.putNextEntry(newEntry)
                     zos.write(bytes)
                 } else {
@@ -136,6 +144,14 @@ class PatcherService(private val context: Context) {
         zos.write(manifestBytes)
         zos.closeEntry()
 
+        // Inject Patched ARSC
+        if (arscBytes != null) {
+            val arscEntry = ZipEntry("resources.arsc")
+            zos.putNextEntry(arscEntry)
+            zos.write(arscBytes)
+            zos.closeEntry()
+        }
+
         // Inject Patched Dex
         ZipFile(classesApk).use { zip ->
             zip.entries().asSequence().filter { it.name.endsWith(".dex") }.forEach { entry ->
@@ -145,8 +161,8 @@ class PatcherService(private val context: Context) {
             }
         }
 
-        // AGGRESSIVE ICON WIPE: Replace EVERYTHING in mipmap/drawable that looks like an icon
-        log("Performing aggressive icon wipe...")
+        // AGGRESSIVE ICON WIPE
+        log("Exhaustive icon wipe started...")
         ZipFile(baseApk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name.lowercase()
@@ -242,17 +258,18 @@ class PatcherService(private val context: Context) {
 
     private fun injectSmapiCore(decompiledDir: File) {
         var assemblyDir = File(decompiledDir, "assets/bin/Data/Managed")
+        if (!assemblyDir.exists()) assemblyDir = File(decompiledDir, "assets/assemblies")
         if (!assemblyDir.exists()) assemblyDir.mkdirs()
         copyAssetToFile("StardewModdingAPI.dll", File(assemblyDir, "StardewModdingAPI.dll"))
     }
 
     private fun installApk(file: File) {
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+        Log.d(TAG, "Triggering install for URI: $uri")
+        val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
         }
         context.startActivity(intent)
     }
