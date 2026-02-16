@@ -409,12 +409,48 @@ class MainActivity : ComponentActivity() {
 
             // Mod List
             LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 24.dp)
+                contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(modList.size) { index ->
                     ModItem(modList[index])
+                }
+            }
+
+            // --- DEV CONSOLE ---
+            var consoleExpanded by remember { mutableStateOf(false) }
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .animateContentSize()
+                    .clickable { consoleExpanded = !consoleExpanded },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Terminal, contentDescription = null, tint = StardewGold, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("SURGERY LOGS", color = StardewGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(if (consoleExpanded) "CLOSE" else "VIEW LOGS", color = Color.Gray, fontSize = 9.sp)
+                    }
+                    if (consoleExpanded) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LazyColumn(modifier = Modifier.height(150.dp)) {
+                            items(PotataApp.logs.size) { index ->
+                                Text(
+                                    PotataApp.logs[index],
+                                    color = if (PotataApp.logs[index].contains("Failed")) Color.Red else Color.LightGray,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
