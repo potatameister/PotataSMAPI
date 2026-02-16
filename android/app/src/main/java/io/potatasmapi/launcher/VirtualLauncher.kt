@@ -1,10 +1,17 @@
 package io.potatasmapi.launcher
 
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.Instrumentation
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.AssetManager
 import android.util.Log
 import dalvik.system.DexClassLoader
 import java.io.File
+import java.lang.reflect.Field
 
 /**
  * VirtualLauncher: The engine that runs the virtualized game.
@@ -17,24 +24,23 @@ class VirtualLauncher(private val context: Context) {
             val virtualRoot = File(context.filesDir, "virtual/stardew")
             val dexDir = File(virtualRoot, "dex")
             val libDir = File(virtualRoot, "lib")
+            val baseApk = File(virtualRoot, "base.apk")
             
             if (!File(virtualRoot, "virtual.ready").exists()) {
                 throw Exception("Virtual environment not ready. Please import first.")
             }
 
-            PotataApp.addLog("Preparing virtual launch...")
+            PotataApp.addLog("Initializing Virtual Engine...")
 
             // 1. Collect all DEX files
             val dexFiles = dexDir.listFiles()?.filter { it.name.endsWith(".dex") }?.map { it.absolutePath }
-            if (dexFiles.isNullOrEmpty()) throw Exception("No game code found in virtual storage.")
+            if (dexFiles.isNullOrEmpty()) throw Exception("No game code found.")
             
             val dexPath = dexFiles.joinToString(File.pathSeparator)
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
-            PotataApp.addLog("Loading code: ${dexFiles.size} blocks")
-
-            // 2. Create ClassLoader
+            // 2. Create the Virtual ClassLoader
             val classLoader = DexClassLoader(
                 dexPath,
                 optimizedDexPath,
@@ -42,28 +48,61 @@ class VirtualLauncher(private val context: Context) {
                 context.classLoader
             )
 
-            // 3. Prepare the Game Environment
-            // Here we would normally start a ProxyActivity that uses this ClassLoader
-            // For now, let's trigger the launch intent
+            // 3. Hook the Activity Thread (The "Brain" of the App)
+            PotataApp.addLog("Redirecting System Context...")
+            injectVirtualLoader(classLoader, baseApk.absolutePath)
+
+            // 4. Launch the Proxy Shell
+            PotataApp.addLog("Executing Proxy Shell...")
             
-            PotataApp.addLog("Bootstrapping game process...")
-            
-            // Note: Launching a specific class from another APK via reflection 
-            // usually requires a dedicated ProxyActivity to handle the lifecycle.
-            // We will start the process here.
-            
-            val intent = Intent(context, MainActivity::class.java).apply {
+            val intent = Intent(context, ProxyActivity::class.java).apply {
                 putExtra("VIRTUAL_MODE", true)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             
-            // This is where the magic happens: we'll transition the UI to the "Running" state
-            PotataApp.addLog("Process Hooked. Enjoy your mods!")
+            context.startActivity(intent)
+            
+            PotataApp.addLog("Virtual Tunnel Established.")
 
         } catch (e: Exception) {
             val error = "Launch Failed: ${e.message}"
             Log.e(TAG, error, e)
             PotataApp.addLog(error)
+        }
+    }
+
+    /**
+     * This is the "Magic" step. It tells the Android system to use our 
+     * custom ClassLoader when it tries to start the game's activities.
+     */
+    @SuppressLint("DiscouragedPrivateApi")
+    private fun injectVirtualLoader(classLoader: ClassLoader, apkPath: String) {
+        try {
+            // Get ActivityThread
+            val activityThreadClass = Class.forName("android.app.ActivityThread")
+            val currentActivityThreadMethod = activityThreadClass.getDeclaredMethod("currentActivityThread")
+            currentActivityThreadMethod.isAccessible = true
+            val currentActivityThread = currentActivityThreadMethod.invoke(null)
+
+            // Get mPackages (the cache of all loaded APKs)
+            val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
+            mPackagesField.isAccessible = true
+            val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
+
+            // Find our own package record
+            val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
+            val loadedApk = loadedApkWeakRef.get() ?: return
+
+            // Force our custom ClassLoader into the system record
+            val loadedApkClass = Class.forName("android.app.LoadedApk")
+            val mClassLoaderField = loadedApkClass.getDeclaredField("mClassLoader")
+            mClassLoaderField.isAccessible = true
+            mClassLoaderField.set(loadedApk, classLoader)
+            
+            PotataApp.addLog("System ClassLoader Swapped.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inject classloader", e)
+            throw e
         }
     }
 }

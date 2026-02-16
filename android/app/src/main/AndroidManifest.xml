@@ -38,6 +38,23 @@
 
         </activity>
 
+        <!-- Virtual Entry for Stardew Valley -->
+        <activity
+            android:name=".ProxyActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:exported="false"
+            android:hardwareAccelerated="true">
+        </activity>
+
+        <activity
+            android:name="com.chucklefish.stardewvalley.StardewValley"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:exported="false"
+            android:hardwareAccelerated="true">
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
