@@ -234,7 +234,7 @@ class MainActivity : ComponentActivity() {
         
         LaunchedEffect(Unit) {
             loadMods()
-            val virtualMarker = File(filesDir, "virtual_stardew/virtual_ready.marker")
+            val virtualMarker = File(filesDir, "virtual/stardew/virtual.ready")
             if (virtualMarker.exists()) isPatched = true
         }
 
@@ -294,7 +294,7 @@ class MainActivity : ComponentActivity() {
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                statusText ?: if (isPatched) "Game assets loaded" else if (activePath != null) "Game APK detected" else "Locate original APK",
+                                statusText ?: if (isPatched) "Game loaded in virtual memory" else if (activePath != null) "Game APK detected" else "Locate original APK",
                                 color = Color.Gray,
                                 fontSize = 13.sp
                             )
@@ -308,14 +308,14 @@ class MainActivity : ComponentActivity() {
                             onClick = { 
                                 activePath?.let { path ->
                                     isPatching = true
-                                    statusText = "Extracting resources..."
+                                    statusText = "Importing game resources..."
                                     scope.launch(Dispatchers.IO) {
                                         try {
-                                            PatcherService(this@MainActivity).patchGame(path)
+                                            PatcherService(this@MainActivity).importGame(path)
                                             isPatched = true
                                             statusText = "Success!"
                                         } catch (e: Exception) {
-                                            statusText = "Extraction Failed: ${e.message}"
+                                            statusText = "Import Failed: ${e.message}"
                                             Log.e("Potata", "Error: ${Log.getStackTraceString(e)}")
                                         } finally { isPatching = false }
                                     }
@@ -329,7 +329,7 @@ class MainActivity : ComponentActivity() {
                             if (isPatching) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text("EXTRACTING...", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("IMPORTING...", color = Color.Black, fontWeight = FontWeight.Bold)
                             } else {
                                 Text("IMPORT GAME RESOURCES", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
@@ -348,7 +348,7 @@ class MainActivity : ComponentActivity() {
                             }
                             IconButton(
                                 onClick = { 
-                                    File(filesDir, "virtual_stardew").deleteRecursively()
+                                    File(filesDir, "virtual/stardew").deleteRecursively()
                                     isPatched = false
                                     statusText = null
                                 },
