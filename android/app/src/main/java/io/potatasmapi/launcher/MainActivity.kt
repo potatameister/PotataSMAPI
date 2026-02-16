@@ -432,7 +432,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Terminal, contentDescription = null, tint = StardewGold, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.List, contentDescription = null, tint = StardewGold, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("SURGERY LOGS", color = StardewGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.weight(1f))
