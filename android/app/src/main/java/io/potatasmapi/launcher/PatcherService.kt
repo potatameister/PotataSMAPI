@@ -18,7 +18,7 @@ class PatcherService(private val context: Context) {
         PotataApp.addLog(msg)
     }
 
-    fun importGame(originalApkPath: String) {
+    fun importGame(originalApkPaths: List<String>) {
         log("Mounting Virtual Workspace...")
 
         val virtualRoot = File(context.filesDir, "virtual/stardew")
@@ -27,60 +27,70 @@ class PatcherService(private val context: Context) {
 
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
         
-        log("Scanning Cartridge: ${File(originalApkPath).name}")
+        log("Scanning Cartridge...")
         
-        val sourceFile = if (originalApkPath.startsWith("content://")) {
-            val tmp = File(context.cacheDir, "temp_source.apk")
-            copyUriToFile(android.net.Uri.parse(originalApkPath), tmp)
-            tmp
-        } else {
-            File(originalApkPath)
+        val apkFiles = originalApkPaths.mapIndexed { index, path ->
+            val sourceFile = if (path.startsWith("content://")) {
+                val tmp = File(context.cacheDir, "temp_source_$index.apk")
+                copyUriToFile(android.net.Uri.parse(path), tmp)
+                tmp
+            } else {
+                File(path)
+            }
+            
+            val targetName = if (index == 0) "base.apk" else "split_$index.apk"
+            val virtualApk = File(virtualRoot, targetName)
+            sourceFile.copyTo(virtualApk, overwrite = true)
+            virtualApk.setReadOnly()
+            
+            if (path.startsWith("content://")) sourceFile.delete()
+            virtualApk
         }
-
-        // Keep the APK for resource mapping and code loading
-        val virtualApk = File(virtualRoot, "base.apk")
-        sourceFile.copyTo(virtualApk, overwrite = true)
-        virtualApk.setReadOnly() // Required by Android to load DEX code safely
 
         try {
             log("Architecture: ${Build.SUPPORTED_ABIS.joinToString()}")
             val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
             log("Selecting Engine: $preferredAbi")
 
-            ZipFile(sourceFile).use { zip ->
-                val entries = zip.entries().asSequence().toList()
-                
-                // 1. Extract Native Engine (.so files)
-                // We extract them to a separate dir for the ClassLoader to find them easily
-                log("Extracting Native Engine...")
-                val libEntries = entries.filter { it.name.startsWith("lib/$preferredAbi/") && it.name.endsWith(".so") }
-                if (libEntries.isEmpty() && preferredAbi == "arm64-v8a") {
-                    log("Warning: arm64 engine missing, falling back to 32-bit...")
-                    entries.filter { it.name.startsWith("lib/armeabi-v7a/") && it.name.endsWith(".so") }.forEach { entry ->
-                        val target = File(libDir, File(entry.name).name)
-                        zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+            apkFiles.forEach { apkFile ->
+                log("Unpacking: ${apkFile.name}")
+                ZipFile(apkFile).use { zip ->
+                    val entries = zip.entries().asSequence().toList()
+                    
+                    // 1. Extract Native Engine (.so files)
+                    val libEntries = entries.filter { it.name.startsWith("lib/$preferredAbi/") && it.name.endsWith(".so") }
+                    if (libEntries.isEmpty() && preferredAbi == "arm64-v8a") {
+                        entries.filter { it.name.startsWith("lib/armeabi-v7a/") && it.name.endsWith(".so") }.forEach { entry ->
+                            val target = File(libDir, File(entry.name).name)
+                            if (!target.exists()) {
+                                zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+                            }
+                        }
+                    } else {
+                        libEntries.forEach { entry ->
+                            val target = File(libDir, File(entry.name).name)
+                            if (!target.exists()) {
+                                zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+                            }
+                        }
                     }
-                } else {
-                    libEntries.forEach { entry ->
-                        val target = File(libDir, File(entry.name).name)
-                        zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+
+                    // 2. Extract Assets (Content)
+                    entries.filter { it.name.startsWith("assets/") && !it.isDirectory }.forEach { entry ->
+                        val target = File(virtualRoot, entry.name)
+                        if (!target.exists()) {
+                            target.parentFile?.mkdirs()
+                            zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+                        }
                     }
                 }
+            }
 
-                // 2. Extract Assets (Content)
-                log("Unpacking Game Assets...")
-                entries.filter { it.name.startsWith("assets/") && !it.isDirectory }.forEach { entry ->
-                    val target = File(virtualRoot, entry.name)
-                    target.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
-                }
-
-                // 3. Inject SMAPI Engine
-                log("Injecting SMAPI Core...")
-                context.assets.open("StardewModdingAPI.dll").use { input ->
-                    File(virtualRoot, "StardewModdingAPI.dll").outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+            // 3. Inject SMAPI Engine
+            log("Injecting SMAPI Core...")
+            context.assets.open("StardewModdingAPI.dll").use { input ->
+                File(virtualRoot, "StardewModdingAPI.dll").outputStream().use { output ->
+                    input.copyTo(output)
                 }
             }
             
@@ -91,8 +101,6 @@ class PatcherService(private val context: Context) {
         } catch (e: Exception) {
             log("Import Error: ${e.localizedMessage}")
             throw e
-        } finally {
-            if (originalApkPath.startsWith("content://")) sourceFile.delete()
         }
     }
 

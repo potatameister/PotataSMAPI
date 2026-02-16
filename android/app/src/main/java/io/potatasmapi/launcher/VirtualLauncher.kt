@@ -19,7 +19,7 @@ import java.lang.reflect.Field
 class VirtualLauncher(private val context: Context) {
     private val TAG = "PotataLauncher"
 
-    fun launch() {
+    fun launch(activityName: String?) {
         try {
             val virtualRoot = File(context.filesDir, "virtual/stardew")
             val libDir = File(virtualRoot, "lib")
@@ -29,38 +29,54 @@ class VirtualLauncher(private val context: Context) {
                 throw Exception("Virtual environment not ready. Please import first.")
             }
 
+            // 1. Find all APKs (base + splits)
+            val allApks = virtualRoot.listFiles()?.filter { it.name.endsWith(".apk") } ?: emptyList()
+            if (allApks.isEmpty()) throw Exception("No game APKs found.")
+
             // Enforce read-only for security (Android restriction)
-            if (baseApk.canWrite()) {
-                baseApk.setReadOnly()
+            allApks.forEach { apk ->
+                if (apk.canWrite()) {
+                    apk.setReadOnly()
+                }
             }
 
             PotataApp.addLog("Initializing Virtual Engine...")
 
-            // 1. Prepare Paths
+            // 2. Prepare Paths
+            val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
-            // 2. Create the Virtual ClassLoader
-            // We point to base.apk directly so Android handles multidex automatically
+            // 3. Create the Virtual ClassLoader
             val classLoader = DexClassLoader(
-                baseApk.absolutePath,
+                dexPath,
                 optimizedDexPath,
                 nativeLibPath,
                 context.classLoader
             )
 
-            // 3. Hook the Activity Thread (The "Brain" of the App)
+            // 4. Verify Activity
+            val targetActivity = activityName ?: "com.chucklefish.stardewvalley.StardewValley"
+            try {
+                classLoader.loadClass(targetActivity)
+                PotataApp.addLog("Verified: $targetActivity found.")
+            } catch (e: ClassNotFoundException) {
+                PotataApp.addLog("Error: Class $targetActivity NOT found in provided APKs!")
+                throw e
+            }
+
+            // 5. Hook the Activity Thread (The "Brain" of the App)
             PotataApp.addLog("Redirecting System Context...")
             injectVirtualLoader(classLoader, baseApk.absolutePath)
 
-            // 3.5 Hook Resources globally
-            injectVirtualResources(baseApk.absolutePath)
+            // 5.5 Hook Resources globally
+            injectVirtualResources(dexPath)
 
-            // 4. Launch the Game Activity
+            // 6. Launch the Game Activity
             PotataApp.addLog("Executing Virtual Core...")
             
             val intent = Intent().apply {
-                setClassName(context.packageName, "com.chucklefish.stardewvalley.StardewValley")
+                setClassName(context.packageName, targetActivity)
                 putExtra("VIRTUAL_MODE", true)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -112,11 +128,13 @@ class VirtualLauncher(private val context: Context) {
     }
 
     /**
-     * Injects the game APK into the resource search path.
+     * Injects the game APK(s) into the resource search path.
      */
     @SuppressLint("DiscouragedPrivateApi")
-    private fun injectVirtualResources(apkPath: String) {
+    private fun injectVirtualResources(dexPath: String) {
         try {
+            val apkPaths = dexPath.split(File.pathSeparator).toTypedArray()
+            
             val activityThreadClass = Class.forName("android.app.ActivityThread")
             val currentActivityThreadMethod = activityThreadClass.getDeclaredMethod("currentActivityThread")
             currentActivityThreadMethod.isAccessible = true
@@ -135,20 +153,19 @@ class VirtualLauncher(private val context: Context) {
             val mSplitResDirsField = loadedApkClass.getDeclaredField("mSplitResDirs")
             mSplitResDirsField.isAccessible = true
             val currentDirs = mSplitResDirsField.get(loadedApk) as? Array<String>
-            val newDirs = if (currentDirs == null) {
-                arrayOf(apkPath)
-            } else {
-                if (currentDirs.contains(apkPath)) return
-                currentDirs + apkPath
-            }
-            mSplitResDirsField.set(loadedApk, newDirs)
+            
+            val newDirsSet = mutableSetOf<String>()
+            currentDirs?.let { newDirsSet.addAll(it) }
+            newDirsSet.addAll(apkPaths)
+            
+            mSplitResDirsField.set(loadedApk, newDirsSet.toTypedArray())
 
             // Force resources refresh
             val mResourcesField = loadedApkClass.getDeclaredField("mResources")
             mResourcesField.isAccessible = true
             mResourcesField.set(loadedApk, null)
 
-            PotataApp.addLog("System Resources Augmented.")
+            PotataApp.addLog("System Resources Augmented (${apkPaths.size} APKs).")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to inject resources", e)
             PotataApp.addLog("Warning: Resource injection failed.")

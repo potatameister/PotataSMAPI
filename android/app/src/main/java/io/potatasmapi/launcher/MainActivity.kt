@@ -173,10 +173,22 @@ class MainActivity : ComponentActivity() {
         apkPickerLauncher.launch(intent)
     }
 
-    private fun locateStardew(): String? {
+    private fun locateStardew(): Pair<List<String>, String?> {
         return try {
-            packageManager.getApplicationInfo("com.chucklefish.stardewvalley", 0).publicSourceDir
-        } catch (e: Exception) { null }
+            val info = packageManager.getApplicationInfo("com.chucklefish.stardewvalley", 0)
+            val paths = mutableListOf<String>()
+            paths.add(info.publicSourceDir)
+            info.splitPublicSourceDirs?.let { paths.addAll(it) }
+            
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setPackage("com.chucklefish.stardewvalley")
+            }
+            val resolveInfo = packageManager.resolveActivity(intent, 0)
+            val activityName = resolveInfo?.activityInfo?.name ?: "com.chucklefish.stardewvalley.StardewValley"
+            
+            Pair(paths, activityName)
+        } catch (e: Exception) { Pair(emptyList(), null) }
     }
 
     @Composable
@@ -224,7 +236,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun PotataDashboard() {
-        val autoPath = remember { locateStardew() }
+        val stardewData = remember { locateStardew() }
+        val autoPath = stardewData.first.firstOrNull()
         val activePath = manualApkPath ?: autoPath
         
         var isPatching by remember { mutableStateOf(false) }
@@ -306,12 +319,13 @@ class MainActivity : ComponentActivity() {
                     if (!isPatched) {
                         Button(
                             onClick = { 
-                                activePath?.let { path ->
+                                val pathsToImport = if (manualApkPath != null) listOf(manualApkPath!!) else stardewData.first
+                                if (pathsToImport.isNotEmpty()) {
                                     isPatching = true
                                     statusText = "Importing game resources..."
                                     scope.launch(Dispatchers.IO) {
                                         try {
-                                            PatcherService(this@MainActivity).importGame(path)
+                                            PatcherService(this@MainActivity).importGame(pathsToImport)
                                             isPatched = true
                                             statusText = "Success!"
                                         } catch (e: Exception) {
@@ -338,7 +352,7 @@ class MainActivity : ComponentActivity() {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
                                 onClick = { 
-                                    VirtualLauncher(this@MainActivity).launch()
+                                    VirtualLauncher(this@MainActivity).launch(stardewData.second)
                                 },
                                 modifier = Modifier.weight(1f).height(56.dp),
                                 shape = RoundedCornerShape(16.dp),
