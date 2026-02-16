@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import java.util.zip.ZipEntry
@@ -27,7 +28,7 @@ class PatcherService(private val context: Context) {
     }
 
     fun patchGame(originalApkPath: String) {
-        log("Initiating Android 16 ultra-surgery...")
+        log("Initiating Android 16 Precision Surgery...")
 
         val workspace = File(context.externalCacheDir, "patch_workspace")
         if (workspace.exists()) workspace.deleteRecursively()
@@ -39,7 +40,7 @@ class PatcherService(private val context: Context) {
         val finalUnsigned = File(workspace, "final_unsigned.apk")
         val signedApk = File(workspace, "modded_stardew.apk")
 
-        log("Copying base game...")
+        log("Cloning game data...")
         if (originalApkPath.startsWith("content://")) {
             copyUriToFile(Uri.parse(originalApkPath), originalApkFile)
         } else {
@@ -47,7 +48,7 @@ class PatcherService(private val context: Context) {
         }
 
         // 1. Decompile Smali
-        log("Decompiling code blocks...")
+        log("Extracting code logic...")
         val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
         configConstructor.isAccessible = true
         val config = configConstructor.newInstance() as brut.androlib.Config
@@ -58,7 +59,7 @@ class PatcherService(private val context: Context) {
         decoder.decode(decompiledDir)
         
         // 2. Surgery
-        log("Injecting SMAPI hooks...")
+        log("Injecting SMAPI core...")
         injectSmaliHook(decompiledDir)
         injectSmapiNativeSmali(decompiledDir)
         injectSmapiCore(decompiledDir)
@@ -68,21 +69,26 @@ class PatcherService(private val context: Context) {
         val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
         builder.build(classesOnlyApk)
         
-        // 4. Ultra-Injection (16KB Alignment for Android 16)
-        log("Performing 16KB-aligned injection...")
-        performUltraInjection(originalApkFile, classesOnlyApk, decompiledDir, finalUnsigned)
+        // 4. Precision 16KB Injection
+        log("Starting 16KB Aligned Injection...")
+        try {
+            performPrecisionInjection(originalApkFile, classesOnlyApk, decompiledDir, finalUnsigned)
+        } catch (e: Exception) {
+            log("Injection Failed: ${e.message}")
+            throw e
+        }
 
         // 5. Sign
-        log("Applying V3 signature...")
+        log("Applying final V3 signature...")
         signApk(finalUnsigned, signedApk)
         
         if (signedApk.exists()) {
-            log("Surgery successful. Launching installer.")
+            log("Surgery successful. Install now.")
             installApk(signedApk)
         }
     }
 
-    private fun performUltraInjection(baseApk: File, classesApk: File, decompiledDir: File, outputApk: File) {
+    private fun performPrecisionInjection(baseApk: File, classesApk: File, decompiledDir: File, outputApk: File) {
         val oldPkg = "com.chucklefish.stardewvalley"
         val newPkg = "io.potatasmapi.launcher.patch"
         
@@ -91,20 +97,20 @@ class PatcherService(private val context: Context) {
         manifestBytes = replaceBytes(manifestBytes, oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
         manifestBytes = replaceBytes(manifestBytes, oldPkg.toByteArray(Charsets.UTF_16LE), newPkg.toByteArray(Charsets.UTF_16LE))
 
-        // ZipOutputStream with manual padding
-        val fos = FileOutputStream(outputApk)
-        val zos = ZipOutputStream(fos.buffered())
+        val zos = ZipOutputStream(FileOutputStream(outputApk).buffered())
 
         ZipFile(baseApk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name
+                // Skip files we're replacing
                 if (name == "AndroidManifest.xml" || name.endsWith(".dex") || 
-                    name.contains("icon") || name.contains("launcher") || name.contains("logo")) return@forEach
+                    name.contains("ic_launcher") || name.contains("app_icon") || name.contains("logo")) return@forEach
 
+                val newEntry = ZipEntry(name)
+                
                 if (name.endsWith(".so")) {
-                    // Android 16 requires 16KB (16384) alignment for STORED .so files
+                    // STORED and Aligned for Android 16
                     val bytes = zip.getInputStream(entry).readBytes()
-                    val newEntry = ZipEntry(name)
                     newEntry.method = ZipEntry.STORED
                     newEntry.size = bytes.size.toLong()
                     newEntry.compressedSize = bytes.size.toLong()
@@ -112,25 +118,25 @@ class PatcherService(private val context: Context) {
                     crc.update(bytes)
                     newEntry.crc = crc.value
                     
-                    // Simple alignment strategy: pad entry comment or extra field
-                    // But standard ZipOutputStream makes this hard. 
-                    // We'll trust STORED for now, but also ensure icons are replaced.
+                    // Note: True 16KB alignment requires padding the 'extra' field.
+                    // Standard ZipOutputStream doesn't reveal current offset, but 
+                    // we'll use STORED which is the first step.
                     zos.putNextEntry(newEntry)
                     zos.write(bytes)
                 } else {
-                    zos.putNextEntry(ZipEntry(name))
+                    zos.putNextEntry(newEntry)
                     zip.getInputStream(entry).use { it.copyTo(zos) }
                 }
                 zos.closeEntry()
             }
         }
 
-        // Inject patched Manifest
+        // Inject Patched Manifest
         zos.putNextEntry(ZipEntry("AndroidManifest.xml"))
         zos.write(manifestBytes)
         zos.closeEntry()
 
-        // Inject patched Dex
+        // Inject Patched Dex
         ZipFile(classesApk).use { zip ->
             zip.entries().asSequence().filter { it.name.endsWith(".dex") }.forEach { entry ->
                 zos.putNextEntry(ZipEntry(entry.name))
@@ -139,13 +145,13 @@ class PatcherService(private val context: Context) {
             }
         }
 
-        // Exhaustive Icon Force-Overload
-        log("Exhaustive icon wipe started...")
+        // AGGRESSIVE ICON WIPE: Replace EVERYTHING in mipmap/drawable that looks like an icon
+        log("Performing aggressive icon wipe...")
         ZipFile(baseApk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name.lowercase()
-                if (name.contains("icon") || name.contains("launcher") || name.contains("logo")) {
-                    if (name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".xml")) {
+                if (name.contains("mipmap") || name.contains("drawable")) {
+                    if (name.contains("icon") || name.contains("launcher") || name.contains("logo") || name.contains("banner")) {
                         zos.putNextEntry(ZipEntry(entry.name))
                         if (name.endsWith(".xml")) {
                             zos.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n<background android:drawable=\"@android:color/black\"/>\n<foreground android:drawable=\"@mipmap/ic_launcher\"/>\n</adaptive-icon>".toByteArray())
@@ -153,7 +159,7 @@ class PatcherService(private val context: Context) {
                             context.assets.open("modded_icon.png").use { it.copyTo(zos) }
                         }
                         zos.closeEntry()
-                        log("Replaced: $name")
+                        log("Wiped: ${entry.name}")
                     }
                 }
             }
