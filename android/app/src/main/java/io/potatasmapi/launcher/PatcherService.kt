@@ -6,7 +6,6 @@ import android.net.Uri
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Scanner
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import java.util.zip.ZipEntry
@@ -30,24 +29,16 @@ class PatcherService(private val context: Context) {
     private val ALIAS = "potata_patcher"
 
     fun patchGame(originalApkPath: String) {
-        Log.d(TAG, "Starting advanced surgery for: $originalApkPath")
+        Log.d(TAG, "Starting Zip-Inject Surgery for: $originalApkPath")
 
         val workspace = File(context.externalCacheDir, "patch_workspace")
         if (workspace.exists()) workspace.deleteRecursively()
         workspace.mkdirs()
 
-        val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
-        configConstructor.isAccessible = true
-        val config = configConstructor.newInstance() as brut.androlib.Config
-        
-        val frameworkDir = File(context.cacheDir, "apktool_framework")
-        if (!frameworkDir.exists()) frameworkDir.mkdirs()
-        config.frameworkDirectory = frameworkDir.absolutePath
-        config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
-
         val originalApkFile = File(workspace, "base_game.apk")
         val decompiledDir = File(workspace, "decompiled")
-        val unsignedApk = File(workspace, "unsigned.apk")
+        val classesOnlyApk = File(workspace, "classes_only.apk")
+        val finalUnsigned = File(workspace, "final_unsigned.apk")
         val signedApk = File(workspace, "modded_stardew.apk")
 
         // 0. Copy APK
@@ -57,103 +48,94 @@ class PatcherService(private val context: Context) {
             File(originalApkPath).copyTo(originalApkFile, true)
         }
 
-        // 1. Decompile
+        // 1. Decompile Smali (Fast mode)
+        val configConstructor = brut.androlib.Config::class.java.getDeclaredConstructor()
+        configConstructor.isAccessible = true
+        val config = configConstructor.newInstance() as brut.androlib.Config
+        config.frameworkDirectory = File(context.cacheDir, "apktool_framework").apply { mkdirs() }.absolutePath
+        config.decodeResources = brut.androlib.Config.DECODE_RESOURCES_NONE
+
         val decoder = ApkDecoder(config, brut.directory.ExtFile(originalApkFile))
         decoder.decode(decompiledDir)
         
-        // 2. Surgery
-        patchBinaryManifest(decompiledDir)
-        patchGameIcons(decompiledDir)
+        // 2. Patch Smali & Manifest
         injectSmaliHook(decompiledDir)
         injectSmapiNativeSmali(decompiledDir)
         injectSmapiCore(decompiledDir)
         
-        // 3. Rebuild
-        Log.d(TAG, "Rebuilding APK base...")
+        // 3. Build only the new DEX
         val builder = brut.androlib.ApkBuilder(config, brut.directory.ExtFile(decompiledDir))
-        builder.build(unsignedApk)
+        builder.build(classesOnlyApk)
         
-        // 4. Critical Fix: Manual Library & Resource preservation
-        // We re-inject the original 'lib/' folder from the base game into the new APK
-        // because ApkBuilder often drops native libraries on Android rebuilds.
-        val finalUnsigned = File(workspace, "final_unsigned.apk")
-        reinjectMissingFiles(unsignedApk, originalApkFile, finalUnsigned)
+        // 4. Perform Direct Injection (Preserves original alignment and libs)
+        performInjection(originalApkFile, classesOnlyApk, decompiledDir, finalUnsigned)
 
-        // 5. Sign (V1, V2, V3)
-        Log.d(TAG, "Signing APK...")
+        // 5. Sign
         signApk(finalUnsigned, signedApk)
         
-        // Finalize
         if (signedApk.exists()) {
             Log.d(TAG, "Surgery Complete. Final APK: ${signedApk.absolutePath}")
             installApk(signedApk)
-        } else {
-            throw Exception("Failed to generate final signed APK")
         }
     }
 
-    private fun reinjectMissingFiles(newApk: File, originalApk: File, outputFile: File) {
-        Log.d(TAG, "Reinforcing APK with original native libraries...")
-        ZipOutputStream(outputFile.outputStream()).use { zos ->
-            // Copy everything from the new built APK
-            ZipFile(newApk).use { zip ->
+    private fun performInjection(baseApk: File, classesApk: File, decompiledDir: File, outputApk: File) {
+        Log.d(TAG, "Injecting patches into original APK structure...")
+        
+        // Prepare patched Manifest
+        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
+        val oldPkg = "com.chucklefish.stardewvalley"
+        val newPkg = "com.chucklefish.stardewvalle_" // Minimal 29-char patch
+        val patchedManifestBytes = replaceBytes(manifestFile.readBytes(), oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
+
+        ZipOutputStream(outputApk.outputStream()).use { zos ->
+            // 1. Copy everything from original APK EXCEPT what we want to replace
+            ZipFile(baseApk).use { zip ->
                 zip.entries().asSequence().forEach { entry ->
+                    val name = entry.name
+                    // Skip files we are replacing
+                    if (name == "AndroidManifest.xml" || name.endsWith(".dex") || 
+                        name.contains("icon") || name.contains("launcher") || name.contains("logo")) {
+                        return@forEach 
+                    }
+                    
+                    zos.putNextEntry(ZipEntry(name))
+                    zip.getInputStream(entry).use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+
+            // 2. Inject new classes.dex from the builder
+            ZipFile(classesApk).use { zip ->
+                zip.entries().asSequence().filter { it.name.endsWith(".dex") }.forEach { entry ->
                     zos.putNextEntry(ZipEntry(entry.name))
                     zip.getInputStream(entry).use { it.copyTo(zos) }
                     zos.closeEntry()
                 }
             }
-            // Add 'lib/' from the original APK if missing
-            ZipFile(originalApk).use { zip ->
+
+            // 3. Inject patched Manifest
+            zos.putNextEntry(ZipEntry("AndroidManifest.xml"))
+            zos.write(patchedManifestBytes)
+            zos.closeEntry()
+
+            // 4. Inject Modded Icons into every icon slot found in the original
+            ZipFile(baseApk).use { zip ->
                 zip.entries().asSequence().forEach { entry ->
-                    if (entry.name.startsWith("lib/")) {
-                        // Check if we already have it (though we shouldn't overwrite newer ones)
-                        try {
-                            zos.putNextEntry(ZipEntry(entry.name))
-                            zip.getInputStream(entry).use { it.copyTo(zos) }
+                    val name = entry.name
+                    if (name.contains("icon") || name.contains("launcher") || name.contains("logo")) {
+                        if (name.endsWith(".png") || name.endsWith(".webp")) {
+                            zos.putNextEntry(ZipEntry(name))
+                            context.assets.open("modded_icon.png").use { it.copyTo(zos) }
                             zos.closeEntry()
-                        } catch (e: Exception) { /* Already exists */ }
+                        } else if (name.endsWith(".xml")) {
+                            // Simplify XML icons
+                            zos.putNextEntry(ZipEntry(name))
+                            zos.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n<background android:drawable=\"@android:color/black\"/>\n<foreground android:drawable=\"@mipmap/ic_launcher\"/>\n</adaptive-icon>".toByteArray())
+                            zos.closeEntry()
+                        }
                     }
                 }
-            }
-        }
-    }
-
-    private fun patchBinaryManifest(decompiledDir: File) {
-        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
-        if (!manifestFile.exists()) return
-        val oldPkg = "com.chucklefish.stardewvalley"
-        val newPkg = "io.potatasmapi.launcher.patch"
-        val bytes = manifestFile.readBytes()
-        var patchedBytes = replaceBytes(bytes, oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
-        patchedBytes = replaceBytes(patchedBytes, oldPkg.toByteArray(Charsets.UTF_16LE), newPkg.toByteArray(Charsets.UTF_16LE))
-        manifestFile.writeBytes(patchedBytes)
-    }
-
-    private fun patchGameIcons(decompiledDir: File) {
-        Log.d(TAG, "Deep scanning for all launcher resources...")
-        val resDir = File(decompiledDir, "res")
-        if (!resDir.exists()) return
-
-        val iconPattern = Regex(".*(icon|launcher|app_icon|logo).*\\.(png|webp|xml)")
-        
-        resDir.walkTopDown().forEach { file ->
-            if (iconPattern.matches(file.name.lowercase())) {
-                try {
-                    when (file.extension.lowercase()) {
-                        "png", "webp" -> {
-                            context.assets.open("modded_icon.png").use { input ->
-                                file.outputStream().use { output -> input.copyTo(output) }
-                            }
-                        }
-                        "xml" -> {
-                            // If it's an adaptive icon XML, we simplify it to use our bitmap
-                            if (file.readText().contains("adaptive-icon")) {
-                                file.writeText("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n<background android:drawable=\"@android:color/black\"/>\n<foreground android:drawable=\"@mipmap/ic_launcher\"/>\n</adaptive-icon>")
-                            }
-                        }
-                    }
-                } catch (e: Exception) { }
             }
         }
     }
@@ -190,7 +172,6 @@ class PatcherService(private val context: Context) {
             .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
             .setV3SigningEnabled(true)
-            .setV4SigningEnabled(false)
             .setMinSdkVersion(24)
             .build()
             .sign()
@@ -205,7 +186,7 @@ class PatcherService(private val context: Context) {
                 ".method public static init()V\n" +
                 "    .registers 2\n" +
                 "    const-string v0, \"SmapiNative\"\n" +
-                "    const-string v1, \"SMAPI Bootstrapping...\"\n" +
+                "    const-string v1, \"SMAPI Bootstrapping (Modded)...\"\n" +
                 "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I\n" +
                 "    const-string v0, \"/sdcard/PotataSMAPI\"\n" +
                 "    invoke-static {v0}, LStardewModdingAPI/EarlyConstants;->set_AndroidBaseDirPath(Ljava/lang/String;)V\n" +
