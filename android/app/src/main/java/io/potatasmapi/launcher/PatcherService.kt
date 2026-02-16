@@ -54,9 +54,11 @@ class PatcherService(private val context: Context) {
                 val dexEntries = entries.filter { it.name.endsWith(".dex") }
                 dexEntries.forEach { entry ->
                     log("Extracting Code: ${entry.name}")
+                    val target = File(dexDir, entry.name)
                     zip.getInputStream(entry).use { input ->
-                        File(dexDir, entry.name).outputStream().use { output -> input.copyTo(output) }
+                        target.outputStream().use { output -> input.copyTo(output) }
                     }
+                    target.setReadOnly()
                 }
 
                 // 2. Extract Native Engine (.so files)
