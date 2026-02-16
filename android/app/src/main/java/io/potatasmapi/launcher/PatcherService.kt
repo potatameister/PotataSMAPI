@@ -91,31 +91,17 @@ class PatcherService(private val context: Context) {
         val oldPkg = "com.chucklefish.stardewvalley"
         val newPkg = "io.potatasmapi.launcher.patch" // Exactly 29 chars
         
-        // 1. Patch Manifest
         val manifestFile = File(decompiledDir, "AndroidManifest.xml")
         var manifestBytes = manifestFile.readBytes()
         manifestBytes = replaceBytes(manifestBytes, oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
         manifestBytes = replaceBytes(manifestBytes, oldPkg.toByteArray(Charsets.UTF_16LE), newPkg.toByteArray(Charsets.UTF_16LE))
 
-        // 2. Patch Resources.arsc (CRITICAL FIX for Compatibility)
-        log("Patching resources.arsc...")
-        var arscBytes: ByteArray? = null
-        ZipFile(baseApk).use { zip ->
-            val entry = zip.getEntry("resources.arsc")
-            if (entry != null) {
-                arscBytes = zip.getInputStream(entry).readBytes()
-                arscBytes = replaceBytes(arscBytes!!, oldPkg.toByteArray(Charsets.UTF_8), newPkg.toByteArray(Charsets.UTF_8))
-                arscBytes = replaceBytes(arscBytes!!, oldPkg.toByteArray(Charsets.UTF_16LE), newPkg.toByteArray(Charsets.UTF_16LE))
-            }
-        }
-
-        val fos = FileOutputStream(outputApk)
-        val zos = ZipOutputStream(fos.buffered())
+        val zos = ZipOutputStream(FileOutputStream(outputApk).buffered())
 
         ZipFile(baseApk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name
-                if (name == "AndroidManifest.xml" || name == "resources.arsc" || name.endsWith(".dex") || 
+                if (name == "AndroidManifest.xml" || name.endsWith(".dex") || 
                     name.contains("ic_launcher") || name.contains("app_icon") || name.contains("logo")) return@forEach
 
                 if (name.endsWith(".so")) {
@@ -132,8 +118,7 @@ class PatcherService(private val context: Context) {
                     zos.putNextEntry(newEntry)
                     zos.write(bytes)
                 } else {
-                    val newEntry = ZipEntry(name)
-                    zos.putNextEntry(newEntry)
+                    zos.putNextEntry(ZipEntry(name))
                     zip.getInputStream(entry).use { it.copyTo(zos) }
                 }
                 zos.closeEntry()
@@ -144,14 +129,6 @@ class PatcherService(private val context: Context) {
         zos.putNextEntry(ZipEntry("AndroidManifest.xml"))
         zos.write(manifestBytes)
         zos.closeEntry()
-
-        // Inject Patched ARSC
-        if (arscBytes != null) {
-            val arscEntry = ZipEntry("resources.arsc")
-            zos.putNextEntry(arscEntry)
-            zos.write(arscBytes)
-            zos.closeEntry()
-        }
 
         // Inject Patched Dex
         ZipFile(classesApk).use { zip ->
@@ -266,7 +243,6 @@ class PatcherService(private val context: Context) {
 
     private fun installApk(file: File) {
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        Log.d(TAG, "Triggering install for URI: $uri")
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

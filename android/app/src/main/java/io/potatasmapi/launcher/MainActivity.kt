@@ -179,27 +179,6 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) { null }
     }
 
-    private fun triggerManualInstall() {
-        val patchedFile = File(externalCacheDir, "patch_workspace/modded_stardew.apk")
-        if (patchedFile.exists()) {
-            try {
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    this,
-                    "$packageName.fileprovider",
-                    patchedFile
-                )
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
-            } catch (e: Exception) {
-                Log.e("Potata", "Installation failed: ${Log.getStackTraceString(e)}")
-            }
-        }
-    }
-
     @Composable
     fun WelcomeScreen() {
         Column(
@@ -221,10 +200,10 @@ class MainActivity : ComponentActivity() {
             }
             Spacer(modifier = Modifier.height(24.dp))
             Text("PotataSMAPI", color = StardewGold, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
-            Text("Digital Surgery Suite", color = StardewGreen, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text("Virtual Farm Loader", color = StardewGreen, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "Modify your Stardew Valley installation locally with a single tap. No root, no data loss.",
+                "Run Stardew Valley mods without modifying the original game. Safe, root-free, and side-by-side compatible.",
                 color = Color.Gray,
                 fontSize = 15.sp,
                 textAlign = TextAlign.Center,
@@ -238,7 +217,7 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth().height(64.dp),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
             ) {
-                Text("INITIALIZE CORE", color = Color.Black, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                Text("INITIALIZE VIRTUAL CORE", color = Color.Black, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
             }
         }
     }
@@ -255,8 +234,8 @@ class MainActivity : ComponentActivity() {
         
         LaunchedEffect(Unit) {
             loadMods()
-            val patchedFile = File(externalCacheDir, "patch_workspace/modded_stardew.apk")
-            if (patchedFile.exists()) isPatched = true
+            val virtualMarker = File(filesDir, "virtual_stardew/virtual_ready.marker")
+            if (virtualMarker.exists()) isPatched = true
         }
 
         Column(
@@ -268,7 +247,7 @@ class MainActivity : ComponentActivity() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     Text("Farm Manager", color = Color.Gray, fontSize = 14.sp)
-                    Text("Potata Dashboard", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Potata Virtual", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 Box(
@@ -309,13 +288,13 @@ class MainActivity : ComponentActivity() {
                         Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text(
-                                if (isPatched) "Surgery Successful" else "Ready for Surgery",
+                                if (isPatched) "Virtual Farm Ready" else "Setup Required",
                                 color = Color.White,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                statusText ?: if (isPatched) "Side-by-side APK ready" else if (activePath != null) "Game discovered" else "Locate game to begin",
+                                statusText ?: if (isPatched) "Game assets loaded" else if (activePath != null) "Game APK detected" else "Locate original APK",
                                 color = Color.Gray,
                                 fontSize = 13.sp
                             )
@@ -329,16 +308,15 @@ class MainActivity : ComponentActivity() {
                             onClick = { 
                                 activePath?.let { path ->
                                     isPatching = true
-                                    statusText = "Decompiling..."
+                                    statusText = "Extracting resources..."
                                     scope.launch(Dispatchers.IO) {
                                         try {
                                             PatcherService(this@MainActivity).patchGame(path)
                                             isPatched = true
                                             statusText = "Success!"
                                         } catch (e: Exception) {
-                                            val fullTrace = Log.getStackTraceString(e)
-                                            statusText = "Surgery Failed: ${e.localizedMessage ?: "Unknown Error"}"
-                                            Log.e("Potata", "Error: $fullTrace")
+                                            statusText = "Extraction Failed: ${e.message}"
+                                            Log.e("Potata", "Error: ${Log.getStackTraceString(e)}")
                                         } finally { isPatching = false }
                                     }
                                 }
@@ -351,24 +329,26 @@ class MainActivity : ComponentActivity() {
                             if (isPatching) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text("OPERATING...", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("EXTRACTING...", color = Color.Black, fontWeight = FontWeight.Bold)
                             } else {
-                                Text("PERFORM DIGITAL SURGERY", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("IMPORT GAME RESOURCES", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         }
                     } else {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
-                                onClick = { triggerManualInstall() },
+                                onClick = { 
+                                    statusText = "Launching Virtual Game... (WIP)" 
+                                },
                                 modifier = Modifier.weight(1f).height(56.dp),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = StardewGreen)
                             ) {
-                                Text("INSTALL APK", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("LAUNCH GAME", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                             IconButton(
                                 onClick = { 
-                                    File(externalCacheDir, "patch_workspace").deleteRecursively()
+                                    File(filesDir, "virtual_stardew").deleteRecursively()
                                     isPatched = false
                                     statusText = null
                                 },
@@ -434,7 +414,7 @@ class MainActivity : ComponentActivity() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.List, contentDescription = null, tint = StardewGold, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("SURGERY LOGS", color = StardewGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("VIRTUAL LOGS", color = StardewGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.weight(1f))
                         Text(if (consoleExpanded) "CLOSE" else "VIEW LOGS", color = Color.Gray, fontSize = 9.sp)
                     }
