@@ -49,12 +49,15 @@ class PotataApp : Application() {
     private fun mountAssets(activity: Activity) {
         try {
             val virtualRoot = File(filesDir, "virtual/stardew")
-            val baseApk = File(virtualRoot, "base.apk")
-            if (baseApk.exists()) {
+            if (virtualRoot.exists()) {
+                val apkFiles = virtualRoot.listFiles()?.filter { it.name.endsWith(".apk") } ?: return
                 val addAssetPathMethod = AssetManager::class.java.getDeclaredMethod("addAssetPath", String::class.java)
                 addAssetPathMethod.isAccessible = true
-                addAssetPathMethod.invoke(activity.assets, baseApk.absolutePath)
-                Log.d("PotataApp", "Mounted assets for ${activity.javaClass.name}")
+                for (apk in apkFiles) {
+                    addAssetPathMethod.invoke(activity.assets, apk.absolutePath)
+                    Log.d("PotataApp", "Mounted assets from ${apk.name} for ${activity.javaClass.name}")
+                }
+                Log.d("PotataApp", "Mounted ${apkFiles.size} APKs for ${activity.javaClass.name}")
             }
         } catch (e: Exception) {
             Log.e("PotataApp", "Asset mount failed", e)
