@@ -16,7 +16,8 @@ import java.io.File
 import java.lang.reflect.Field
 
 /**
- * VirtualLauncher: The engine that runs the virtualized game.
+ * VirtualLauncher: The Host Engine.
+ * Runs Stardew Valley code inside our own process identity.
  */
 class VirtualLauncher(private val context: Context) {
     private val TAG = "PotataLauncher"
@@ -35,31 +36,30 @@ class VirtualLauncher(private val context: Context) {
             if (allApks.isEmpty()) throw Exception("No sterilized APKs found.")
             allApks.forEach { if (it.canWrite()) it.setReadOnly() }
 
-            PotataApp.addLog("Initializing Ultimate Sandbox...")
+            PotataApp.addLog("Initializing Host Sandbox...")
 
             val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
+            // Load game code into OUR process
             val classLoader = DexClassLoader(dexPath, optimizedDexPath, nativeLibPath, context.classLoader)
 
             val targetActivity = activityName ?: "com.chucklefish.stardewvalley.StardewValley"
             
-            // 5. THE HIJACK
-            System.setProperty("user.dir", virtualRoot.absolutePath)
+            // Set paths for the Host
+            System.setProperty("user.dir", "/sdcard/PotataSMAPI")
             System.setProperty("user.home", "/sdcard/PotataSMAPI")
             
             injectClassLoaderPaths(classLoader, dexPath, nativeLibPath)
-            injectProcessIdentity(classLoader, dexPath, nativeLibPath, virtualRoot.absolutePath)
             injectInstrumentation(classLoader)
             injectVirtualResources(dexPath)
 
-            // 6. SMAPI BOOTSTRAP
+            // SMAPI Environment
             try {
                 android.system.Os.setenv("MONO_PATH", assetsDir.absolutePath, true)
                 android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
-                android.system.Os.setenv("SMAPI_AUTO_LOAD", "1", true)
-                android.system.Os.setenv("EXTERNAL_STORAGE", "/sdcard/PotataSMAPI", true)
+                android.system.Os.setenv("HOME", "/sdcard/PotataSMAPI", true)
             } catch (e: Exception) {}
 
             val intent = Intent().apply {
@@ -69,70 +69,11 @@ class VirtualLauncher(private val context: Context) {
             }
             
             context.startActivity(intent)
-            PotataApp.addLog("Virtual Sandbox Active.")
+            PotataApp.addLog("Host Sandbox Active.")
 
         } catch (e: Exception) {
             PotataApp.addLog("Launch Failed: ${e.message}")
         }
-    }
-
-    @SuppressLint("DiscouragedPrivateApi")
-    private fun injectProcessIdentity(classLoader: ClassLoader, dexPath: String, libDir: String, dataDir: String) {
-        try {
-            val activityThreadClass = Class.forName("android.app.ActivityThread")
-            val currentActivityThread = activityThreadClass.getDeclaredMethod("currentActivityThread").invoke(null)
-            
-            // Hijack mBoundApplication (The Process Identity)
-            val mBoundApplicationField = activityThreadClass.getDeclaredField("mBoundApplication")
-            mBoundApplicationField.isAccessible = true
-            val mBoundApplication = mBoundApplicationField.get(currentActivityThread)
-            
-            val infoField = mBoundApplication.javaClass.getDeclaredField("appInfo")
-            infoField.isAccessible = true
-            val appInfo = infoField.get(mBoundApplication) as android.content.pm.ApplicationInfo
-            
-            // Force the entire process to think it IS Stardew Valley in our sandbox
-            appInfo.packageName = "com.chucklefish.stardewvalley"
-            appInfo.dataDir = dataDir
-            appInfo.sourceDir = dexPath.split(File.pathSeparator)[0]
-            
-            // Re-inject into LoadedApk as well
-            injectVirtualLoader(classLoader, dexPath, libDir, dataDir)
-            
-            PotataApp.addLog("Process Identity Hijacked.")
-        } catch (e: Exception) { Log.e(TAG, "Process Hijack Failed", e) }
-    }
-
-    @SuppressLint("DiscouragedPrivateApi")
-    private fun injectVirtualLoader(classLoader: ClassLoader, dexPath: String, libDir: String, dataDir: String) {
-        try {
-            val apkPaths = dexPath.split(File.pathSeparator).toTypedArray()
-            val activityThreadClass = Class.forName("android.app.ActivityThread")
-            val currentActivityThread = activityThreadClass.getDeclaredMethod("currentActivityThread").invoke(null)
-            val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
-            mPackagesField.isAccessible = true
-            val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
-            val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
-            val loadedApk = loadedApkWeakRef.get() ?: return
-            val loadedApkClass = Class.forName("android.app.LoadedApk")
-            
-            val fields = mapOf(
-                "mClassLoader" to classLoader,
-                "mAppDir" to apkPaths[0],
-                "mResDir" to apkPaths[0],
-                "mLibDir" to libDir,
-                "mDataDir" to dataDir,
-                "mPackageName" to "com.chucklefish.stardewvalley"
-            )
-
-            for ((name, value) in fields) {
-                try {
-                    val field = loadedApkClass.getDeclaredField(name)
-                    field.isAccessible = true
-                    field.set(loadedApk, value)
-                } catch (e: Exception) {}
-            }
-        } catch (e: Exception) {}
     }
 
     private fun injectClassLoaderPaths(virtualLoader: DexClassLoader, dexPath: String, nativeLibPath: String) {
@@ -198,22 +139,13 @@ class VirtualLauncher(private val context: Context) {
 
     private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader) : Instrumentation() {
         override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
-            val activity = base.newActivity(classLoader, className, intent)
-            try {
-                val spoofedContext = object : ContextWrapper(activity.baseContext) {
-                    override fun getPackageName(): String = "com.chucklefish.stardewvalley"
-                    override fun getExternalFilesDir(type: String?): File? = File("/sdcard/PotataSMAPI/Files")
-                    override fun getFilesDir(): File = File("/sdcard/PotataSMAPI/Internal")
-                }
-                ContextWrapper::class.java.getDeclaredField("mBase").apply { isAccessible = true }.set(activity, spoofedContext)
-            } catch (e: Exception) {}
-            return activity
+            return base.newActivity(classLoader, className, intent)
         }
 
         override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
             try {
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                android.widget.Toast.makeText(activity, "SMAPI: INITIALIZING MODS...", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(activity, "POTATA SMAPI: HOSTING FARM...", android.widget.Toast.LENGTH_LONG).show()
             } catch (e: Exception) {}
             base.callActivityOnCreate(activity, icicle)
         }
