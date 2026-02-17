@@ -10,8 +10,8 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 /**
- * The VirtualExtractor (Ultra).
- * Strips the vanilla C# code from the APK to force SMAPI loading.
+ * The VirtualExtractor (Final Form).
+ * Completely sterilizes the game APKs by removing vanilla code segments.
  */
 class PatcherService(private val context: Context) {
     private val TAG = "PotataVirtual"
@@ -21,7 +21,7 @@ class PatcherService(private val context: Context) {
     }
 
     fun importGame(originalApkPaths: List<String>) {
-        log("Surgical Workspace Initialization...")
+        log("Surgical Sterilization Starting...")
 
         val virtualRoot = File(context.filesDir, "virtual/stardew")
         if (virtualRoot.exists()) virtualRoot.deleteRecursively()
@@ -29,8 +29,6 @@ class PatcherService(private val context: Context) {
 
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
         val assetsDir = File(virtualRoot, "assets").apply { mkdirs() }
-        
-        log("Importing ${originalApkPaths.size} segments...")
         
         originalApkPaths.forEachIndexed { index, path ->
             val sourceFile = if (path.startsWith("content://")) {
@@ -44,13 +42,8 @@ class PatcherService(private val context: Context) {
             val targetName = if (index == 0) "base.apk" else "split_$index.apk"
             val virtualApk = File(virtualRoot, targetName)
 
-            if (index == 0) {
-                log("Cleaning Engine: ${sourceFile.name}")
-                cleanAndCopyApk(sourceFile, virtualApk, libDir)
-            } else {
-                log("Copying Segment: ${sourceFile.name}")
-                sourceFile.copyTo(virtualApk, overwrite = true)
-            }
+            log("Sterilizing Segment: ${sourceFile.name}")
+            sterilizeApk(sourceFile, virtualApk, libDir)
             
             virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
@@ -64,16 +57,14 @@ class PatcherService(private val context: Context) {
             }
         }
         
-        log("Import Successful!")
-        log("Size Optimized. SMAPI Ready.")
+        log("Import Successful! ALL segments sterilized.")
         File(virtualRoot, "virtual.ready").createNewFile()
     }
 
     /**
-     * Copies the APK but REMOVES the vanilla DLLs.
-     * This forces Mono to look at our MONO_PATH for the modified DLLs.
+     * Removes ANY file named 'Stardew Valley.dll' from the APK segment.
      */
-    private fun cleanAndCopyApk(source: File, target: File, libDir: File) {
+    private fun sterilizeApk(source: File, target: File, libDir: File) {
         val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
         
         ZipFile(source).use { zip ->
@@ -82,20 +73,23 @@ class PatcherService(private val context: Context) {
                 while (entries.hasMoreElements()) {
                     val entry = entries.nextElement()
                     
-                    // Skip the vanilla DLL (the core of the redirection)
-                    if (entry.name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
+                    // The "Nuclear" Rule: Delete the vanilla engine from the archive
+                    if (entry.name.contains("Stardew Valley.dll", ignoreCase = true)) {
+                        log("Destroyed Vanilla Ghost: ${entry.name}")
                         continue 
                     }
 
-                    // Extract Native Libs to filesystem while copying others
+                    // Extract Native Libs while we are here
                     if (entry.name.startsWith("lib/$preferredAbi/") && entry.name.endsWith(".so")) {
                         val libFile = File(libDir, File(entry.name).name)
-                        zip.getInputStream(entry).use { input ->
-                            libFile.outputStream().use { output -> input.copyTo(output) }
+                        if (!libFile.exists()) {
+                            zip.getInputStream(entry).use { input ->
+                                libFile.outputStream().use { output -> input.copyTo(output) }
+                            }
                         }
                     }
 
-                    // Copy entry to new APK
+                    // Copy everything else
                     val newEntry = ZipEntry(entry.name)
                     out.putNextEntry(newEntry)
                     zip.getInputStream(entry).use { input -> input.copyTo(out) }

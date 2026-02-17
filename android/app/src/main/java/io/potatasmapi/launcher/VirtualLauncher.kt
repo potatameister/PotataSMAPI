@@ -28,57 +28,40 @@ class VirtualLauncher(private val context: Context) {
             val assetsDir = File(virtualRoot, "assets")
             
             if (!File(virtualRoot, "virtual.ready").exists()) {
-                throw Exception("Virtual environment not ready. Please import first.")
+                throw Exception("Virtual environment not ready.")
             }
 
-            // 1. Find all APKs
             val allApks = virtualRoot.listFiles()?.filter { it.name.endsWith(".apk") } ?: emptyList()
-            if (allApks.isEmpty()) throw Exception("No game APKs found.")
-            allApks.forEach { apk -> if (apk.canWrite()) apk.setReadOnly() }
+            if (allApks.isEmpty()) throw Exception("No sterilized APKs found.")
+            allApks.forEach { if (it.canWrite()) it.setReadOnly() }
 
-            PotataApp.addLog("Initializing Virtual Engine...")
+            PotataApp.addLog("Initializing Ultimate Sandbox...")
 
-            // 2. Prepare Paths
             val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
-            // 3. Create the Virtual ClassLoader
-            val classLoader = DexClassLoader(
-                dexPath,
-                optimizedDexPath,
-                nativeLibPath,
-                context.classLoader
-            )
+            val classLoader = DexClassLoader(dexPath, optimizedDexPath, nativeLibPath, context.classLoader)
 
-            // 4. Verify Activity
             val targetActivity = activityName ?: "com.chucklefish.stardewvalley.StardewValley"
-            try {
-                classLoader.loadClass(targetActivity)
-                PotataApp.addLog("Verified: $targetActivity")
-            } catch (e: ClassNotFoundException) {
-                PotataApp.addLog("Error: $targetActivity not found")
-                throw e
-            }
-
-            // 5. System Hooks
+            
+            // 5. THE HIJACK
             System.setProperty("user.dir", virtualRoot.absolutePath)
+            System.setProperty("user.home", "/sdcard/PotataSMAPI")
             
             injectClassLoaderPaths(classLoader, dexPath, nativeLibPath)
-            injectVirtualLoader(classLoader, dexPath, nativeLibPath, virtualRoot.absolutePath)
+            injectProcessIdentity(classLoader, dexPath, nativeLibPath, virtualRoot.absolutePath)
             injectInstrumentation(classLoader)
             injectVirtualResources(dexPath)
 
-            // 6. Bootstrap SMAPI (The Redirection)
+            // 6. SMAPI BOOTSTRAP
             try {
                 android.system.Os.setenv("MONO_PATH", assetsDir.absolutePath, true)
                 android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
+                android.system.Os.setenv("SMAPI_AUTO_LOAD", "1", true)
                 android.system.Os.setenv("EXTERNAL_STORAGE", "/sdcard/PotataSMAPI", true)
-                android.system.Os.setenv("HOME", "/sdcard/PotataSMAPI", true)
-                PotataApp.addLog("SMAPI Environment Primed.")
-            } catch (e: Exception) { Log.w(TAG, "Env failed") }
+            } catch (e: Exception) {}
 
-            // 7. Launch
             val intent = Intent().apply {
                 setClassName(context.packageName, targetActivity)
                 putExtra("VIRTUAL_MODE", true)
@@ -86,60 +69,57 @@ class VirtualLauncher(private val context: Context) {
             }
             
             context.startActivity(intent)
-            PotataApp.addLog("Virtual Tunnel Established.")
+            PotataApp.addLog("Virtual Sandbox Active.")
 
         } catch (e: Exception) {
-            val error = "Launch Failed: ${e.message}"
-            Log.e(TAG, error, e)
-            PotataApp.addLog(error)
+            PotataApp.addLog("Launch Failed: ${e.message}")
         }
     }
 
-    private fun injectClassLoaderPaths(virtualLoader: DexClassLoader, dexPath: String, nativeLibPath: String) {
+    @SuppressLint("DiscouragedPrivateApi")
+    private fun injectProcessIdentity(classLoader: ClassLoader, dexPath: String, libDir: String, dataDir: String) {
         try {
-            val systemLoader = context.classLoader as BaseDexClassLoader
-            val pathListField = findField(BaseDexClassLoader::class.java, "pathList")
-            val systemPathList = pathListField.get(systemLoader)
-            val virtualPathList = pathListField.get(virtualLoader)
-
-            // Merge dexElements
-            val dexElementsField = findField(systemPathList.javaClass, "dexElements")
-            val systemElements = dexElementsField.get(systemPathList) as Array<*>
-            val virtualElements = dexElementsField.get(virtualPathList) as Array<*>
+            val activityThreadClass = Class.forName("android.app.ActivityThread")
+            val currentActivityThread = activityThreadClass.getDeclaredMethod("currentActivityThread").invoke(null)
             
-            val combinedElements = java.lang.reflect.Array.newInstance(
-                systemElements.javaClass.componentType!!,
-                systemElements.size + virtualElements.size
-            )
-            System.arraycopy(virtualElements, 0, combinedElements, 0, virtualElements.size)
-            System.arraycopy(systemElements, 0, combinedElements, virtualElements.size, systemElements.size)
-            dexElementsField.set(systemPathList, combinedElements)
-
-            PotataApp.addLog("ClassLoader Hooked.")
-        } catch (e: Exception) { Log.e(TAG, "ClassLoader hook failed", e) }
+            // Hijack mBoundApplication (The Process Identity)
+            val mBoundApplicationField = activityThreadClass.getDeclaredField("mBoundApplication")
+            mBoundApplicationField.isAccessible = true
+            val mBoundApplication = mBoundApplicationField.get(currentActivityThread)
+            
+            val infoField = mBoundApplication.javaClass.getDeclaredField("appInfo")
+            infoField.isAccessible = true
+            val appInfo = infoField.get(mBoundApplication) as android.content.pm.ApplicationInfo
+            
+            // Force the entire process to think it IS Stardew Valley in our sandbox
+            appInfo.packageName = "com.chucklefish.stardewvalley"
+            appInfo.dataDir = dataDir
+            appInfo.sourceDir = dexPath.split(File.pathSeparator)[0]
+            
+            // Re-inject into LoadedApk as well
+            injectVirtualLoader(classLoader, dexPath, libDir, dataDir)
+            
+            PotataApp.addLog("Process Identity Hijacked.")
+        } catch (e: Exception) { Log.e(TAG, "Process Hijack Failed", e) }
     }
 
     @SuppressLint("DiscouragedPrivateApi")
     private fun injectVirtualLoader(classLoader: ClassLoader, dexPath: String, libDir: String, dataDir: String) {
         try {
             val apkPaths = dexPath.split(File.pathSeparator).toTypedArray()
-            val baseApk = apkPaths[0]
-
             val activityThreadClass = Class.forName("android.app.ActivityThread")
             val currentActivityThread = activityThreadClass.getDeclaredMethod("currentActivityThread").invoke(null)
             val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
             mPackagesField.isAccessible = true
             val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
-
             val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
             val loadedApk = loadedApkWeakRef.get() ?: return
             val loadedApkClass = Class.forName("android.app.LoadedApk")
             
-            // Swap fields
             val fields = mapOf(
                 "mClassLoader" to classLoader,
-                "mAppDir" to baseApk,
-                "mResDir" to baseApk,
+                "mAppDir" to apkPaths[0],
+                "mResDir" to apkPaths[0],
                 "mLibDir" to libDir,
                 "mDataDir" to dataDir,
                 "mPackageName" to "com.chucklefish.stardewvalley"
@@ -152,7 +132,25 @@ class VirtualLauncher(private val context: Context) {
                     field.set(loadedApk, value)
                 } catch (e: Exception) {}
             }
-        } catch (e: Exception) { Log.e(TAG, "LoadedApk hook failed", e) }
+        } catch (e: Exception) {}
+    }
+
+    private fun injectClassLoaderPaths(virtualLoader: DexClassLoader, dexPath: String, nativeLibPath: String) {
+        try {
+            val systemLoader = context.classLoader as BaseDexClassLoader
+            val pathListField = findField(BaseDexClassLoader::class.java, "pathList")
+            val systemPathList = pathListField.get(systemLoader)
+            val virtualPathList = pathListField.get(virtualLoader)
+
+            val dexElementsField = findField(systemPathList.javaClass, "dexElements")
+            val systemElements = dexElementsField.get(systemPathList) as Array<*>
+            val virtualElements = dexElementsField.get(virtualPathList) as Array<*>
+            
+            val combinedElements = java.lang.reflect.Array.newInstance(systemElements.javaClass.componentType!!, systemElements.size + virtualElements.size)
+            System.arraycopy(virtualElements, 0, combinedElements, 0, virtualElements.size)
+            System.arraycopy(systemElements, 0, combinedElements, virtualElements.size, systemElements.size)
+            dexElementsField.set(systemPathList, combinedElements)
+        } catch (e: Exception) {}
     }
 
     @SuppressLint("DiscouragedPrivateApi")
@@ -168,18 +166,9 @@ class VirtualLauncher(private val context: Context) {
             val loadedApk = loadedApkWeakRef.get() ?: return
             val loadedApkClass = Class.forName("android.app.LoadedApk")
             
-            try {
-                val mSplitResDirsField = loadedApkClass.getDeclaredField("mSplitResDirs")
-                mSplitResDirsField.isAccessible = true
-                mSplitResDirsField.set(loadedApk, apkPaths)
-            } catch (e: Exception) {}
-
-            try {
-                val mResourcesField = loadedApkClass.getDeclaredField("mResources")
-                mResourcesField.isAccessible = true
-                mResourcesField.set(loadedApk, null)
-            } catch (e: Exception) {}
-        } catch (e: Exception) { Log.e(TAG, "Resource hook failed", e) }
+            loadedApkClass.getDeclaredField("mSplitResDirs").apply { isAccessible = true }.set(loadedApk, apkPaths)
+            loadedApkClass.getDeclaredField("mResources").apply { isAccessible = true }.set(loadedApk, null)
+        } catch (e: Exception) {}
     }
 
     private fun injectInstrumentation(classLoader: ClassLoader) {
@@ -192,7 +181,7 @@ class VirtualLauncher(private val context: Context) {
             if (base !is PotataInstrumentation) {
                 mInstrumentationField.set(currentActivityThread, PotataInstrumentation(base, classLoader))
             }
-        } catch (e: Exception) { Log.e(TAG, "Instrumentation hook failed", e) }
+        } catch (e: Exception) {}
     }
 
     private fun findField(clazz: Class<*>, name: String): Field {
@@ -202,9 +191,7 @@ class VirtualLauncher(private val context: Context) {
                 val field = c.getDeclaredField(name)
                 field.isAccessible = true
                 return field
-            } catch (e: NoSuchFieldException) {
-                c = c.superclass
-            }
+            } catch (e: NoSuchFieldException) { c = c.superclass }
         }
         throw NoSuchFieldException(name)
     }
@@ -212,26 +199,21 @@ class VirtualLauncher(private val context: Context) {
     private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader) : Instrumentation() {
         override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
             val activity = base.newActivity(classLoader, className, intent)
-            
-            // Context Spoofing (Package & Paths)
             try {
-                val baseContext = activity.baseContext
-                val spoofedContext = object : ContextWrapper(baseContext) {
+                val spoofedContext = object : ContextWrapper(activity.baseContext) {
                     override fun getPackageName(): String = "com.chucklefish.stardewvalley"
                     override fun getExternalFilesDir(type: String?): File? = File("/sdcard/PotataSMAPI/Files")
                     override fun getFilesDir(): File = File("/sdcard/PotataSMAPI/Internal")
                 }
-                val mBaseField = ContextWrapper::class.java.getDeclaredField("mBase")
-                mBaseField.isAccessible = true
-                mBaseField.set(activity, spoofedContext)
-            } catch (e: Exception) { Log.e("Potata", "Context Spoof Failed", e) }
-
+                ContextWrapper::class.java.getDeclaredField("mBase").apply { isAccessible = true }.set(activity, spoofedContext)
+            } catch (e: Exception) {}
             return activity
         }
 
         override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
             try {
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                android.widget.Toast.makeText(activity, "SMAPI: INITIALIZING MODS...", android.widget.Toast.LENGTH_LONG).show()
             } catch (e: Exception) {}
             base.callActivityOnCreate(activity, icicle)
         }
