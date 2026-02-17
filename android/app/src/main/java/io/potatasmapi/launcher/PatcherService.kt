@@ -2,13 +2,14 @@ package io.potatasmapi.launcher
 
 import android.content.Context
 import android.os.Build
+import android.os.Environment
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipFile
 
 /**
- * The VirtualExtractor (Stable & Transparent).
+ * The VirtualExtractor (Clean Slate Edition).
  */
 class PatcherService(private val context: Context) {
     private val TAG = "PotataVirtual"
@@ -18,17 +19,25 @@ class PatcherService(private val context: Context) {
     }
 
     fun importGame(originalApkPaths: List<String>) {
-        log("--- STARTING IMPORT ---")
+        log("--- STARTING CLEAN IMPORT ---")
 
         val virtualRoot = File(context.filesDir, "virtual/stardew")
         if (virtualRoot.exists()) virtualRoot.deleteRecursively()
         virtualRoot.mkdirs()
 
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
-        val sdcardRoot = File("/sdcard/PotataSMAPI")
+        
+        // Dynamic SD Card Path
+        val sdcardRoot = File(Environment.getExternalStorageDirectory(), "PotataSMAPI")
         if (!sdcardRoot.exists()) sdcardRoot.mkdirs()
         
-        val assemblyDir = File(sdcardRoot, "assemblies").apply { if (exists()) deleteRecursively(); mkdirs() }
+        // CLEAN SLATE: Wipe previous attempt files
+        log("Cleaning old redirection files...")
+        File(sdcardRoot, "assets").deleteRecursively()
+        File(sdcardRoot, "assemblies").deleteRecursively()
+        
+        val assetsDir = File(sdcardRoot, "assets").apply { mkdirs() }
+        val assemblyDir = File(sdcardRoot, "assemblies").apply { mkdirs() }
         
         originalApkPaths.forEachIndexed { index, path ->
             val sourceFile = if (path.startsWith("content://")) {
@@ -42,59 +51,59 @@ class PatcherService(private val context: Context) {
             val targetName = if (index == 0) "base.apk" else "split_$index.apk"
             val virtualApk = File(virtualRoot, targetName)
 
-            log("Processing: ${sourceFile.name} -> $targetName")
+            log("Cloning segment: $targetName")
             sourceFile.copyTo(virtualApk, overwrite = true)
             
-            extractEssentialFiles(virtualApk, libDir, assemblyDir)
+            extractEssentialFiles(virtualApk, libDir, assemblyDir, assetsDir)
             
             virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
         }
 
         // Inject SMAPI
-        log("Injecting SMAPI into SD Card...")
+        log("Injecting SMAPI core to SD Card...")
         context.assets.open("StardewModdingAPI.dll").use { input ->
-            File(assemblyDir, "Stardew Valley.dll").outputStream().use { output ->
-                input.copyTo(output)
-            }
+            val target = File(assemblyDir, "Stardew Valley.dll")
+            target.outputStream().use { input.copyTo(it) }
         }
         
-        log("--- IMPORT COMPLETE ---")
+        log("--- IMPORT SUCCESSFUL ---")
         File(virtualRoot, "virtual.ready").createNewFile()
     }
 
-    private fun extractEssentialFiles(apk: File, libDir: File, assemblyDir: File) {
+    private fun extractEssentialFiles(apk: File, libDir: File, assemblyDir: File, assetsDir: File) {
         val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
-        log("Extracting for ABI: $preferredAbi")
-        
         ZipFile(apk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name
                 
-                // 1. DLLs to SD Card
+                // 1. Assemblies to SD Card
                 if (name.contains("assemblies/") && name.endsWith(".dll")) {
-                    val target = File(assemblyDir, name.substringAfter("assemblies/"))
-                    target.parentFile?.mkdirs()
+                    val fileName = name.substringAfterLast("/")
+                    val target = File(assemblyDir, fileName)
                     
                     zip.getInputStream(entry).use { input ->
                         val bytes = input.readBytes()
                         target.writeBytes(patchBinaryPaths(bytes))
                     }
                     
-                    if (name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
-                        target.renameTo(File(target.parentFile, "StardewValley.Vanilla.dll"))
+                    if (fileName.equals("Stardew Valley.dll", ignoreCase = true)) {
+                        target.renameTo(File(assemblyDir, "StardewValley.Vanilla.dll"))
                     }
                 }
                 
-                // 2. Native Engine Libs (The most important for fixing black screen)
+                // 2. Content to SD Card
+                if (name.startsWith("assets/Content/")) {
+                    val target = File(assetsDir, name.removePrefix("assets/"))
+                    target.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { it.copyTo(target.outputStream()) }
+                }
+                
+                // 3. Native Libs to Internal
                 if (name.startsWith("lib/$preferredAbi/") && name.endsWith(".so")) {
-                    val target = File(libDir, File(name).name)
+                    val target = File(libDir, name.substringAfterLast("/"))
                     if (!target.exists()) {
-                        log("Extracting Native: ${target.name}")
-                        zip.getInputStream(entry).use { input ->
-                            val bytes = input.readBytes()
-                            target.writeBytes(patchBinaryPaths(bytes))
-                        }
+                        zip.getInputStream(entry).use { it.copyTo(target.outputStream()) }
                     }
                 }
             }
@@ -105,7 +114,6 @@ class PatcherService(private val context: Context) {
         val search = "StardewValley".toByteArray()
         val replace = "PotataSMAPI\u0000\u0000".toByteArray()
         val patched = data.copyOf()
-        
         var i = 0
         while (i <= patched.size - search.size) {
             var match = true
@@ -116,13 +124,9 @@ class PatcherService(private val context: Context) {
                 }
             }
             if (match) {
-                for (j in replace.indices) {
-                    patched[i + j] = replace[j]
-                }
+                for (j in replace.indices) patched[i + j] = replace[j]
                 i += search.size
-            } else {
-                i++
-            }
+            } else i++
         }
         return patched
     }
