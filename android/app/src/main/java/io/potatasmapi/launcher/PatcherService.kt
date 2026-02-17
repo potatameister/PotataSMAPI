@@ -8,8 +8,8 @@ import java.io.FileOutputStream
 import java.util.zip.ZipFile
 
 /**
- * The VirtualExtractor (Final Fix Edition).
- * Extracts both assemblies and game content to ensure MonoGame has all its assets.
+ * The VirtualExtractor (SD Card Redirect Edition).
+ * Extracts game content to the SD Card to bypass internal storage restrictions.
  */
 class PatcherService(private val context: Context) {
     private val TAG = "PotataVirtual"
@@ -26,8 +26,19 @@ class PatcherService(private val context: Context) {
         virtualRoot.mkdirs()
 
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
-        val assetsDir = File(virtualRoot, "assets").apply { mkdirs() }
-        val assemblyDir = File(assetsDir, "assemblies").apply { mkdirs() }
+        
+        // Use SD card for assets and assemblies
+        val sdcardRoot = File("/sdcard/PotataSMAPI")
+        if (!sdcardRoot.exists()) sdcardRoot.mkdirs()
+        
+        val assetsDir = File(sdcardRoot, "assets").apply { 
+            if (exists()) deleteRecursively()
+            mkdirs() 
+        }
+        val assemblyDir = File(sdcardRoot, "assemblies").apply {
+            if (exists()) deleteRecursively()
+            mkdirs()
+        }
         
         originalApkPaths.forEachIndexed { index, path ->
             val sourceFile = if (path.startsWith("content://")) {
@@ -44,40 +55,39 @@ class PatcherService(private val context: Context) {
             log("Cloning: ${sourceFile.name}")
             sourceFile.copyTo(virtualApk, overwrite = true)
             
-            // Extract code and content
-            extractAssets(virtualApk, libDir, assetsDir, assemblyDir, virtualRoot)
+            // Extract code and content to SD Card
+            extractAssets(virtualApk, libDir, assetsDir, assemblyDir)
             
             virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
         }
 
-        // Inject SMAPI
-        log("Bridging Modded Engine...")
+        // Inject SMAPI into SD Card
+        log("Bridging Modded Engine on SD Card...")
         context.assets.open("StardewModdingAPI.dll").use { input ->
-            // In Mono-Redirect, SMAPI must be 'Stardew Valley.dll' to override the internal code
             File(assemblyDir, "Stardew Valley.dll").outputStream().use { output ->
                 input.copyTo(output)
             }
         }
         
-        log("Import Complete. System Ready.")
+        log("Import Complete. SD Card Ready.")
         File(virtualRoot, "virtual.ready").createNewFile()
     }
 
-    private fun extractAssets(apk: File, libDir: File, assetsDir: File, assemblyDir: File, virtualRoot: File) {
+    private fun extractAssets(apk: File, libDir: File, assetsDir: File, assemblyDir: File) {
         val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
         ZipFile(apk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name
                 
-                // 1. Extract and Patch DLLs (Assemblies)
+                // 1. Extract DLLs (Assemblies) to SD Card
                 if (name.contains("assemblies/") && name.endsWith(".dll")) {
-                    val target = File(assetsDir, name.removePrefix("assets/"))
+                    val target = File(assemblyDir, name.substringAfter("assemblies/"))
                     target.parentFile?.mkdirs()
                     
                     zip.getInputStream(entry).use { input ->
                         val bytes = input.readBytes()
-                        // Patch hardcoded paths in the DLL bytes (Length-safe)
+                        // Patch paths in the DLL bytes
                         val patchedBytes = patchBinaryPaths(bytes)
                         target.writeBytes(patchedBytes)
                     }
@@ -88,9 +98,9 @@ class PatcherService(private val context: Context) {
                     }
                 }
                 
-                // 2. Extract and Patch Game Content (Essential for textures/audio)
+                // 2. Extract Game Content to SD Card
                 if (name.startsWith("assets/Content/")) {
-                    val target = File(virtualRoot, name)
+                    val target = File(assetsDir, name.removePrefix("assets/"))
                     target.parentFile?.mkdirs()
                     
                     zip.getInputStream(entry).use { input ->
@@ -103,13 +113,14 @@ class PatcherService(private val context: Context) {
                     }
                 }
                 
-                // 3. Extract and Patch Native Libs
+                // 3. Extract Native Libs to Internal (System requirement)
                 if (name.startsWith("lib/$preferredAbi/") && name.endsWith(".so")) {
                     val target = File(libDir, File(name).name)
                     if (!target.exists()) {
                         zip.getInputStream(entry).use { input ->
                             val bytes = input.readBytes()
-                            target.writeBytes(patchBinaryPaths(bytes))
+                            val patchedBytes = patchBinaryPaths(bytes)
+                            target.writeBytes(patchedBytes)
                         }
                     }
                 }
