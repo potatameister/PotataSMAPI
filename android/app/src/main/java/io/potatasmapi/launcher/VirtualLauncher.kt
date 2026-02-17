@@ -44,7 +44,10 @@ class VirtualLauncher(private val context: Context) {
             PotataApp.addLog("Initializing Virtual Engine...")
 
             // 2. Prepare Paths
-            val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
+            // Include our own APK so the launcher's classes (Compose, etc) are still found
+            val myApk = context.applicationInfo.sourceDir
+            val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath } + File.pathSeparator + myApk
+            
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
@@ -66,9 +69,12 @@ class VirtualLauncher(private val context: Context) {
                 throw e
             }
 
+            // 4.5 Set Working Directory
+            System.setProperty("user.dir", virtualRoot.absolutePath)
+
             // 5. Hook the Activity Thread (The "Brain" of the App)
             PotataApp.addLog("Redirecting System Context...")
-            injectVirtualLoader(classLoader, dexPath)
+            injectVirtualLoader(classLoader, dexPath, nativeLibPath, virtualRoot.absolutePath)
             injectInstrumentation(classLoader)
 
             // 5.1 Hook the current context's PackageInfo (Nuclear Option)
@@ -112,7 +118,7 @@ class VirtualLauncher(private val context: Context) {
      * custom ClassLoader and paths when it tries to start the game's activities.
      */
     @SuppressLint("DiscouragedPrivateApi")
-    private fun injectVirtualLoader(classLoader: ClassLoader, dexPath: String) {
+    private fun injectVirtualLoader(classLoader: ClassLoader, dexPath: String, libDir: String, dataDir: String) {
         try {
             val apkPaths = dexPath.split(File.pathSeparator).toTypedArray()
             val baseApk = apkPaths[0]
@@ -153,6 +159,24 @@ class VirtualLauncher(private val context: Context) {
                 mResDirField.set(loadedApk, baseApk)
             } catch (e: Exception) { Log.w(TAG, "mResDir not found") }
 
+            try {
+                val mLibDirField = loadedApkClass.getDeclaredField("mLibDir")
+                mLibDirField.isAccessible = true
+                mLibDirField.set(loadedApk, libDir)
+            } catch (e: Exception) { Log.w(TAG, "mLibDir not found") }
+
+            try {
+                val mDataDirField = loadedApkClass.getDeclaredField("mDataDir")
+                mDataDirField.isAccessible = true
+                mDataDirField.set(loadedApk, dataDir)
+            } catch (e: Exception) { Log.w(TAG, "mDataDir not found") }
+
+            try {
+                val mPrimaryCpuAbiField = loadedApkClass.getDeclaredField("mPrimaryCpuAbi")
+                mPrimaryCpuAbiField.isAccessible = true
+                mPrimaryCpuAbiField.set(loadedApk, android.os.Build.SUPPORTED_ABIS.firstOrNull())
+            } catch (e: Exception) { Log.w(TAG, "mPrimaryCpuAbi not found") }
+
             if (apkPaths.size > 1) {
                 try {
                     val mSplitSourceDirsField = loadedApkClass.getDeclaredField("mSplitSourceDirs")
@@ -175,9 +199,6 @@ class VirtualLauncher(private val context: Context) {
         }
     }
 
-    /**
-     * Injects the game APK(s) into the resource search path.
-     */
     /**
      * Injects the game APK(s) into the resource search path.
      */
@@ -249,7 +270,11 @@ class VirtualLauncher(private val context: Context) {
     private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader) : Instrumentation() {
         override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
             // Force use our virtual classloader instead of the system one
-            return base.newActivity(classLoader, className, intent)
+            val activity = base.newActivity(classLoader, className, intent)
+            try {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            } catch (e: Exception) {}
+            return activity
         }
 
         override fun onCreate(arguments: Bundle?) { base.onCreate(arguments) }
