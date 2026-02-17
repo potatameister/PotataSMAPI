@@ -75,10 +75,9 @@ class PatcherService(private val context: Context) {
                         }
                     }
 
-                    // 2. Extract Assets (ONLY Content/ folder, ignore others to save space)
-                    // We extract these because game engines often fail to read sub-folders from APKs directly
-                    entries.filter { it.name.startsWith("assets/Content/") && !it.isDirectory }.forEach { entry ->
-                        val target = File(virtualRoot, entry.name)
+                    // 2. Extract Assets (Content + DLLs)
+                    entries.filter { (it.name.startsWith("assets/Content/") || it.name.endsWith(".dll")) && !it.isDirectory }.forEach { entry ->
+                        val target = File(virtualRoot, if (entry.name.startsWith("assets/")) entry.name else "assets/${entry.name}")
                         if (!target.exists()) {
                             target.parentFile?.mkdirs()
                             zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
@@ -87,16 +86,23 @@ class PatcherService(private val context: Context) {
                 }
             }
 
-            // 3. Inject SMAPI Engine
+            // 3. Redirect DLLs
+            log("Redirecting assemblies...")
+            val vanillaDll = File(virtualRoot, "assets/Stardew Valley.dll")
+            if (vanillaDll.exists()) {
+                vanillaDll.renameTo(File(virtualRoot, "assets/StardewValley.Vanilla.dll"))
+            }
+
+            // 4. Inject SMAPI Engine
             log("Injecting SMAPI Core...")
             context.assets.open("StardewModdingAPI.dll").use { input ->
-                File(virtualRoot, "StardewModdingAPI.dll").outputStream().use { output ->
+                File(virtualRoot, "assets/Stardew Valley.dll").outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
             
             log("Import Successful!")
-            log("Storage Optimized: Using Hybrid APK/Extraction.")
+            log("SMAPI Hybrid Injector Ready.")
             File(virtualRoot, "virtual.ready").createNewFile()
 
         } catch (e: Exception) {

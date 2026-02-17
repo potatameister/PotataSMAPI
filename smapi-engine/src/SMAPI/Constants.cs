@@ -31,7 +31,7 @@ internal static class EarlyConstants
     ** Accessors
     *********/
     /// <summary>The base directory for Android data (overridden by the launcher).</summary>
-    public static string? AndroidBaseDirPath { get; set; }
+    public static string? AndroidBaseDirPath { get; set; } = Environment.GetEnvironmentVariable("SMAPI_ANDROID_BASE_DIR");
 
     /// <summary>The path to the game folder.</summary>
     public static string GamePath { get; } = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;

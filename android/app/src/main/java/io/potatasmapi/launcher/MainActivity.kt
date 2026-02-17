@@ -383,8 +383,11 @@ class MainActivity : ComponentActivity() {
 
             // Stats Bento Grid
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                val logFile = File("/sdcard/PotataSMAPI/ErrorLogs/SMAPI-latest.txt")
+                val isSmapiActive = remember { mutableStateOf(logFile.exists()) }
+                
                 StatCard("MODS LOADED", modList.size.toString(), Icons.Default.List, Modifier.weight(1f))
-                StatCard("ENGINE VER", "4.5.1", Icons.Default.Build, Modifier.weight(1f))
+                StatCard("SMAPI STATUS", if (isSmapiActive.value) "ACTIVE" else "INACTIVE", Icons.Default.Build, Modifier.weight(1f))
             }
             
             Spacer(modifier = Modifier.height(24.dp))

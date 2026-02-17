@@ -69,10 +69,12 @@ class VirtualLauncher(private val context: Context) {
             injectVirtualResources(dexPath)
 
             // 6. Bootstrap SMAPI
-            // We set the MONO_PATH to include our virtual root so SMAPI.dll is seen
+            // We set the MONO_PATH to include our virtual assets folder so our redirected Stardew Valley.dll is seen
             try {
-                android.system.Os.setenv("MONO_PATH", virtualRoot.absolutePath, true)
-                android.system.Os.setenv("SMAPI_ASSEMBLY", "StardewModdingAPI.dll", true)
+                val assetsDir = File(virtualRoot, "assets")
+                android.system.Os.setenv("MONO_PATH", assetsDir.absolutePath, true)
+                android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
+                android.system.Os.setenv("SMAPI_AUTO_LOAD", "1", true)
                 PotataApp.addLog("SMAPI Bootstrapper Primed.")
             } catch (e: Exception) { Log.w(TAG, "SMAPI env failed") }
 
