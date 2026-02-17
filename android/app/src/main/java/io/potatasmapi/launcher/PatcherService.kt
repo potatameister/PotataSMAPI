@@ -43,28 +43,21 @@ class PatcherService(private val context: Context) {
             val virtualApk = File(virtualRoot, targetName)
 
             log("Sterilizing Segment: ${sourceFile.name}")
-            sterilizeApk(sourceFile, virtualApk, libDir)
+            // Pass libDir to extract native libs during sterilization
+            sterilizeAndInject(sourceFile, virtualApk, libDir)
             
             virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
         }
-
-        // 3. Inject SMAPI Engine
-        log("Injecting SMAPI Core...")
-        context.assets.open("StardewModdingAPI.dll").use { input ->
-            File(assetsDir, "Stardew Valley.dll").outputStream().use { output ->
-                input.copyTo(output)
-            }
-        }
         
-        log("Import Successful! ALL segments sterilized.")
+        log("Import Successful! Blobs destroyed.")
         File(virtualRoot, "virtual.ready").createNewFile()
     }
 
     /**
-     * Removes ANY file named 'Stardew Valley.dll' from the APK segment.
+     * Removes blobs/vanilla DLLs and INJECTS SMAPI directly into the APK.
      */
-    private fun sterilizeApk(source: File, target: File, libDir: File) {
+    private fun sterilizeAndInject(source: File, target: File, libDir: File) {
         val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
         
         ZipFile(source).use { zip ->
@@ -72,16 +65,25 @@ class PatcherService(private val context: Context) {
                 val entries = zip.entries()
                 while (entries.hasMoreElements()) {
                     val entry = entries.nextElement()
+                    val name = entry.name
                     
-                    // The "Nuclear" Rule: Delete the vanilla engine from the archive
-                    if (entry.name.contains("Stardew Valley.dll", ignoreCase = true)) {
-                        log("Destroyed Vanilla Ghost: ${entry.name}")
-                        continue 
+                    // 1. DESTROY THE BLOB (The root cause of vanilla loading)
+                    if (name.contains("assemblies.blob") || name.contains("assemblies.manifest")) {
+                        continue
                     }
 
-                    // Extract Native Libs while we are here
-                    if (entry.name.startsWith("lib/$preferredAbi/") && entry.name.endsWith(".so")) {
-                        val libFile = File(libDir, File(entry.name).name)
+                    // 2. Rename Vanilla DLL (so we can load it later)
+                    if (name.endsWith("assemblies/Stardew Valley.dll", ignoreCase = true)) {
+                        // Write it as Vanilla.dll
+                        out.putNextEntry(ZipEntry("assemblies/StardewValley.Vanilla.dll"))
+                        zip.getInputStream(entry).use { input -> input.copyTo(out) }
+                        out.closeEntry()
+                        continue
+                    }
+                    
+                    // 3. Extract Native Libs
+                    if (name.startsWith("lib/$preferredAbi/") && name.endsWith(".so")) {
+                        val libFile = File(libDir, File(name).name)
                         if (!libFile.exists()) {
                             zip.getInputStream(entry).use { input ->
                                 libFile.outputStream().use { output -> input.copyTo(output) }
@@ -89,12 +91,19 @@ class PatcherService(private val context: Context) {
                         }
                     }
 
-                    // Copy everything else
-                    val newEntry = ZipEntry(entry.name)
-                    out.putNextEntry(newEntry)
+                    // Copy everything else normally
+                    out.putNextEntry(ZipEntry(name))
                     zip.getInputStream(entry).use { input -> input.copyTo(out) }
                     out.closeEntry()
                 }
+
+                // 4. INJECT SMAPI CORE (Masquerading as the game)
+                log("Injecting SMAPI into APK...")
+                out.putNextEntry(ZipEntry("assemblies/Stardew Valley.dll"))
+                context.assets.open("StardewModdingAPI.dll").use { input ->
+                    input.copyTo(out)
+                }
+                out.closeEntry()
             }
         }
     }
