@@ -8,6 +8,7 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.AssetManager
+import android.os.Bundle
 import android.util.Log
 import dalvik.system.DexClassLoader
 import java.io.File
@@ -177,6 +178,51 @@ class VirtualLauncher(private val context: Context) {
     /**
      * Injects the game APK(s) into the resource search path.
      */
+    /**
+     * Injects the game APK(s) into the resource search path.
+     */
+    @SuppressLint("DiscouragedPrivateApi")
+    private fun injectVirtualResources(dexPath: String) {
+        try {
+            val apkPaths = dexPath.split(File.pathSeparator).toTypedArray()
+            
+            val activityThreadClass = Class.forName("android.app.ActivityThread")
+            val currentActivityThreadMethod = activityThreadClass.getDeclaredMethod("currentActivityThread")
+            currentActivityThreadMethod.isAccessible = true
+            val currentActivityThread = currentActivityThreadMethod.invoke(null)
+
+            val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
+            mPackagesField.isAccessible = true
+            val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
+
+            val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
+            val loadedApk = loadedApkWeakRef.get() ?: return
+
+            val loadedApkClass = Class.forName("android.app.LoadedApk")
+            
+            // Add to mSplitResDirs
+            val mSplitResDirsField = loadedApkClass.getDeclaredField("mSplitResDirs")
+            mSplitResDirsField.isAccessible = true
+            val currentDirs = mSplitResDirsField.get(loadedApk) as? Array<String>
+            
+            val newDirsSet = mutableSetOf<String>()
+            currentDirs?.let { newDirsSet.addAll(it) }
+            newDirsSet.addAll(apkPaths)
+            
+            mSplitResDirsField.set(loadedApk, newDirsSet.toTypedArray())
+
+            // Force resources refresh
+            val mResourcesField = loadedApkClass.getDeclaredField("mResources")
+            mResourcesField.isAccessible = true
+            mResourcesField.set(loadedApk, null)
+
+            PotataApp.addLog("System Resources Augmented (${apkPaths.size} APKs).")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inject resources", e)
+            PotataApp.addLog("Warning: Resource injection failed.")
+        }
+    }
+
     @SuppressLint("DiscouragedPrivateApi")
     private fun injectInstrumentation(classLoader: ClassLoader) {
         try {
@@ -208,9 +254,6 @@ class VirtualLauncher(private val context: Context) {
 
         override fun onCreate(arguments: Bundle?) { base.onCreate(arguments) }
         override fun onStart() { base.onStart() }
-        override fun onResume() { base.onResume() }
-        override fun onPause() { base.onPause() }
         override fun onDestroy() { base.onDestroy() }
-        // Pass-through other methods as needed...
     }
 }
