@@ -349,17 +349,29 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } else {
+                        var isLaunching by remember { mutableStateOf(false) }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
                                 onClick = { 
-                                    android.widget.Toast.makeText(this@MainActivity, "Launching: ${stardewData.second}", android.widget.Toast.LENGTH_SHORT).show()
-                                    VirtualLauncher(this@MainActivity).launch(stardewData.second)
+                                    isLaunching = true
+                                    scope.launch(Dispatchers.IO) {
+                                        VirtualLauncher(this@MainActivity).launch(stardewData.second) {
+                                            isLaunching = false
+                                        }
+                                    }
                                 },
+                                enabled = !isLaunching,
                                 modifier = Modifier.weight(1f).height(56.dp),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = StardewGreen)
                             ) {
-                                Text("LAUNCH GAME", color = Color.Black, fontWeight = FontWeight.Bold)
+                                if (isLaunching) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text("BOOTING...", color = Color.Black, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Text("LAUNCH GAME", color = Color.Black, fontWeight = FontWeight.Bold)
+                                }
                             }
                             IconButton(
                                 onClick = { 
