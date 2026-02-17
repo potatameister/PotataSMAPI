@@ -10,14 +10,13 @@ import android.content.pm.ActivityInfo
 import android.content.res.AssetManager
 import android.os.Bundle
 import android.util.Log
-import dalvik.system.BaseDexClassLoader
 import dalvik.system.DexClassLoader
 import java.io.File
 import java.lang.reflect.Field
 
 /**
- * VirtualLauncher: The Host Engine.
- * Runs Stardew Valley code inside our own process identity.
+ * VirtualLauncher: The Stable Bridge.
+ * Runs the game in a controlled sandbox without freezing the launcher.
  */
 class VirtualLauncher(private val context: Context) {
     private val TAG = "PotataLauncher"
@@ -36,32 +35,32 @@ class VirtualLauncher(private val context: Context) {
             if (allApks.isEmpty()) throw Exception("No sterilized APKs found.")
             allApks.forEach { if (it.canWrite()) it.setReadOnly() }
 
-            PotataApp.addLog("Initializing Host Sandbox...")
+            PotataApp.addLog("Preparing Stable Bridge...")
 
             val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
-            // Load game code into OUR process
+            // 1. Create the Virtual ClassLoader (Independent)
             val classLoader = DexClassLoader(dexPath, optimizedDexPath, nativeLibPath, context.classLoader)
 
             val targetActivity = activityName ?: "com.chucklefish.stardewvalley.StardewValley"
             
-            // Set paths for the Host
+            // 2. Setup System Hooks (SAFE VERSION)
             System.setProperty("user.dir", "/sdcard/PotataSMAPI")
             System.setProperty("user.home", "/sdcard/PotataSMAPI")
             
-            injectClassLoaderPaths(classLoader, dexPath, nativeLibPath)
             injectInstrumentation(classLoader)
             injectVirtualResources(dexPath)
 
-            // SMAPI Environment
+            // 3. SMAPI Environment
             try {
                 android.system.Os.setenv("MONO_PATH", assetsDir.absolutePath, true)
                 android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
-                android.system.Os.setenv("HOME", "/sdcard/PotataSMAPI", true)
+                android.system.Os.setenv("EXTERNAL_STORAGE", "/sdcard/PotataSMAPI", true)
             } catch (e: Exception) {}
 
+            // 4. Launch with Explicit Identity
             val intent = Intent().apply {
                 setClassName(context.packageName, targetActivity)
                 putExtra("VIRTUAL_MODE", true)
@@ -69,29 +68,12 @@ class VirtualLauncher(private val context: Context) {
             }
             
             context.startActivity(intent)
-            PotataApp.addLog("Host Sandbox Active.")
+            PotataApp.addLog("Bridge Established. Launching Farm...")
 
         } catch (e: Exception) {
             PotataApp.addLog("Launch Failed: ${e.message}")
+            Log.e(TAG, "Launch error", e)
         }
-    }
-
-    private fun injectClassLoaderPaths(virtualLoader: DexClassLoader, dexPath: String, nativeLibPath: String) {
-        try {
-            val systemLoader = context.classLoader as BaseDexClassLoader
-            val pathListField = findField(BaseDexClassLoader::class.java, "pathList")
-            val systemPathList = pathListField.get(systemLoader)
-            val virtualPathList = pathListField.get(virtualLoader)
-
-            val dexElementsField = findField(systemPathList.javaClass, "dexElements")
-            val systemElements = dexElementsField.get(systemPathList) as Array<*>
-            val virtualElements = dexElementsField.get(virtualPathList) as Array<*>
-            
-            val combinedElements = java.lang.reflect.Array.newInstance(systemElements.javaClass.componentType!!, systemElements.size + virtualElements.size)
-            System.arraycopy(virtualElements, 0, combinedElements, 0, virtualElements.size)
-            System.arraycopy(systemElements, 0, combinedElements, virtualElements.size, systemElements.size)
-            dexElementsField.set(systemPathList, combinedElements)
-        } catch (e: Exception) {}
     }
 
     @SuppressLint("DiscouragedPrivateApi")
@@ -122,30 +104,35 @@ class VirtualLauncher(private val context: Context) {
             if (base !is PotataInstrumentation) {
                 mInstrumentationField.set(currentActivityThread, PotataInstrumentation(base, classLoader))
             }
-        } catch (e: Exception) {}
-    }
-
-    private fun findField(clazz: Class<*>, name: String): Field {
-        var c: Class<*>? = clazz
-        while (c != null) {
-            try {
-                val field = c.getDeclaredField(name)
-                field.isAccessible = true
-                return field
-            } catch (e: NoSuchFieldException) { c = c.superclass }
-        }
-        throw NoSuchFieldException(name)
+        } catch (e: Exception) { Log.e(TAG, "Instrumentation hook failed", e) }
     }
 
     private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader) : Instrumentation() {
         override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
-            return base.newActivity(classLoader, className, intent)
+            // THE BRIDGE: When Android asks for a game activity, we give it our Virtual Loader
+            val loaderToUse = if (className?.contains("chucklefish") == true) classLoader else cl
+            val activity = base.newActivity(loaderToUse, className, intent)
+            
+            try {
+                val spoofedContext = object : ContextWrapper(activity.baseContext) {
+                    override fun getPackageName(): String = "com.chucklefish.stardewvalley"
+                    override fun getExternalFilesDir(type: String?): File? = File("/sdcard/PotataSMAPI/Files")
+                    override fun getFilesDir(): File = File("/sdcard/PotataSMAPI/Internal")
+                }
+                val mBaseField = ContextWrapper::class.java.getDeclaredField("mBase")
+                mBaseField.isAccessible = true
+                mBaseField.set(activity, spoofedContext)
+            } catch (e: Exception) {}
+            
+            return activity
         }
 
         override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
             try {
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                android.widget.Toast.makeText(activity, "POTATA SMAPI: HOSTING FARM...", android.widget.Toast.LENGTH_LONG).show()
+                if (activity.javaClass.name.contains("chucklefish")) {
+                    android.widget.Toast.makeText(activity, "POTATA: STARTING ENGINE...", android.widget.Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) {}
             base.callActivityOnCreate(activity, icicle)
         }
