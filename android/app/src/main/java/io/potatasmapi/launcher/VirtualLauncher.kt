@@ -17,7 +17,7 @@ import java.io.File
 import java.lang.reflect.Field
 
 /**
- * VirtualLauncher: The Native Engine Hijacker.
+ * VirtualLauncher: The Native Engine Hijacker (Diagnostic Edition).
  */
 class VirtualLauncher(private val context: Context) {
     private val TAG = "PotataLauncher"
@@ -29,41 +29,44 @@ class VirtualLauncher(private val context: Context) {
             val sdcardRoot = File(Environment.getExternalStorageDirectory(), "PotataSMAPI")
             
             if (!File(virtualRoot, "virtual.ready").exists()) {
-                throw Exception("Environment not ready.")
+                throw Exception("Import first!")
             }
 
-            PotataApp.addLog("--- ENGINE HIJACK SEQUENCE ---")
+            PotataApp.addLog("--- LAUNCH SEQUENCE START ---")
             
             val allApks = virtualRoot.listFiles()?.filter { it.name.endsWith(".apk") } ?: emptyList()
             val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
-            // 1. Create ClassLoader
+            // 1. Check Redirection Path
+            val smapiDll = File(sdcardRoot, "assemblies/Stardew Valley.dll")
+            if (!smapiDll.exists()) {
+                throw Exception("SMAPI DLL missing from SD Card!")
+            }
+
+            // 2. Create ClassLoader
+            PotataApp.addLog("Loading code segments...")
             val classLoader = DexClassLoader(dexPath, optimizedDexPath, nativeLibPath, context.classLoader)
 
-            // 2. Setup Environment (Aggressive)
+            // 3. Setup Redirection
             try {
                 android.system.Os.setenv("MONO_PATH", sdcardRoot.absolutePath, true)
                 android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", sdcardRoot.absolutePath, true)
                 android.system.Os.setenv("HOME", sdcardRoot.absolutePath, true)
                 android.system.Os.setenv("EXTERNAL_STORAGE", sdcardRoot.absolutePath, true)
                 android.system.Os.setenv("LD_LIBRARY_PATH", nativeLibPath, true)
-                PotataApp.addLog("Redirection Env: ACTIVE")
-            } catch (e: Exception) {}
-
-            // 3. Manual Native Hijack
-            loadPatchedEngines(libDir)
+                PotataApp.addLog("Environment Variables: OK")
+            } catch (e: Exception) { PotataApp.addLog("Env Error: ${e.message}") }
 
             // 4. System Hooks
-            injectSystemRecords(classLoader, allApks[0].absolutePath, nativeLibPath, virtualRoot.absolutePath)
-            injectInstrumentation(classLoader, allApks[0].absolutePath)
+            val baseApk = allApks[0].absolutePath
+            injectSystemRecords(classLoader, baseApk, nativeLibPath, virtualRoot.absolutePath)
+            injectInstrumentation(classLoader, baseApk, nativeLibPath)
             injectVirtualResources(dexPath)
 
-            // 5. Entry Discovery
+            // 5. Fire Launch
             val targetActivity = detectEntryPoint(classLoader, activityName)
-
-            // 6. Launch
             (context as Activity).runOnUiThread {
                 try {
                     val intent = Intent().apply {
@@ -73,31 +76,16 @@ class VirtualLauncher(private val context: Context) {
                     }
                     context.startActivity(intent)
                     onComplete()
-                    PotataApp.addLog("Hijacked Intent Delivered.")
+                    PotataApp.addLog("Launch Intent Fired.")
                 } catch (e: Exception) {
-                    PotataApp.addLog("Intent Failure: ${e.message}")
+                    PotataApp.addLog("Launch Crash: ${e.message}")
                     onComplete()
                 }
             }
 
         } catch (e: Exception) {
-            PotataApp.addLog("HIJACK FAIL: ${e.message}")
+            PotataApp.addLog("CRITICAL: ${e.message}")
             (context as Activity).runOnUiThread { onComplete() }
-        }
-    }
-
-    private fun loadPatchedEngines(libDir: File) {
-        val engines = listOf("libmonosgen-2.0.so", "libmonodroid.so", "libxamarin-app.so")
-        engines.forEach { name ->
-            val file = File(libDir, name)
-            if (file.exists()) {
-                try {
-                    System.load(file.absolutePath)
-                    PotataApp.addLog("Hijacked $name: LOADED")
-                } catch (e: Throwable) {
-                    PotataApp.addLog("Hijacked $name: FAIL (${e.message})")
-                }
-            }
         }
     }
 
@@ -106,7 +94,7 @@ class VirtualLauncher(private val context: Context) {
         for (opt in options) {
             try {
                 cl.loadClass(opt)
-                PotataApp.addLog("Entry Point: $opt")
+                PotataApp.addLog("Primary entry: $opt")
                 return opt
             } catch (e: Exception) {}
         }
@@ -119,7 +107,7 @@ class VirtualLauncher(private val context: Context) {
             val activityThreadClass = Class.forName("android.app.ActivityThread")
             val currentActivityThread = activityThreadClass.getDeclaredMethod("currentActivityThread").invoke(null)
             
-            // 1. Process Identity Hijack
+            // Hijack Process Roots
             try {
                 val mBoundApplicationField = activityThreadClass.getDeclaredField("mBoundApplication")
                 mBoundApplicationField.isAccessible = true
@@ -127,15 +115,16 @@ class VirtualLauncher(private val context: Context) {
                 val infoField = mBoundApplication.javaClass.getDeclaredField("appInfo")
                 infoField.isAccessible = true
                 val appInfo = infoField.get(mBoundApplication) as ApplicationInfo
+                
                 appInfo.packageName = "com.chucklefish.stardewvalley"
                 appInfo.dataDir = dataDir
                 appInfo.sourceDir = baseApk
                 appInfo.publicSourceDir = baseApk
                 appInfo.nativeLibraryDir = libDir
-                PotataApp.addLog("Process Hook: SUCCESS")
-            } catch (e: Exception) {}
+                PotataApp.addLog("Process Hook: OK")
+            } catch (e: Exception) { PotataApp.addLog("Process Hook: SKIP") }
 
-            // 2. LoadedApk Swap
+            // Hijack LoadedApk
             val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
             mPackagesField.isAccessible = true
             val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
@@ -143,23 +132,21 @@ class VirtualLauncher(private val context: Context) {
             val loadedApk = loadedApkWeakRef.get() ?: return
             val loadedApkClass = Class.forName("android.app.LoadedApk")
             
-            val fieldMap = mapOf(
-                "mClassLoader" to classLoader,
-                "mAppDir" to baseApk, "mDir" to baseApk, "mResDir" to baseApk,
-                "mDataDir" to dataDir,
-                "mLibDir" to libDir, "mLibPath" to libDir,
-                "mPackageName" to "com.chucklefish.stardewvalley"
-            )
-
-            for ((name, value) in fieldMap) {
+            val fields = loadedApkClass.declaredFields
+            for (field in fields) {
+                field.isAccessible = true
                 try {
-                    val field = loadedApkClass.getDeclaredField(name)
-                    field.isAccessible = true
-                    field.set(loadedApk, value)
+                    when (field.name) {
+                        "mClassLoader" -> field.set(loadedApk, classLoader)
+                        "mAppDir", "mDir", "mResDir" -> field.set(loadedApk, baseApk)
+                        "mDataDir" -> field.set(loadedApk, dataDir)
+                        "mLibDir", "mLibPath" -> field.set(loadedApk, libDir)
+                        "mPackageName" -> field.set(loadedApk, "com.chucklefish.stardewvalley")
+                    }
                 } catch (e: Exception) {}
             }
-            PotataApp.addLog("Package Hook: SUCCESS")
-        } catch (e: Exception) { PotataApp.addLog("Global Hook Fail") }
+            PotataApp.addLog("Package Hook: OK")
+        } catch (e: Exception) { PotataApp.addLog("System Hook Fail: ${e.message}") }
     }
 
     private fun injectVirtualResources(dexPath: String) {
@@ -176,11 +163,11 @@ class VirtualLauncher(private val context: Context) {
             
             loadedApkClass.getDeclaredField("mSplitResDirs").apply { isAccessible = true }.set(loadedApk, apkPaths)
             loadedApkClass.getDeclaredField("mResources").apply { isAccessible = true }.set(loadedApk, null)
-            PotataApp.addLog("Resource Hook: SUCCESS")
+            PotataApp.addLog("Resource Hook: OK")
         } catch (e: Exception) {}
     }
 
-    private fun injectInstrumentation(classLoader: ClassLoader, baseApk: String) {
+    private fun injectInstrumentation(classLoader: ClassLoader, baseApk: String, libDir: String) {
         try {
             val activityThreadClass = Class.forName("android.app.ActivityThread")
             val currentActivityThread = activityThreadClass.getDeclaredMethod("currentActivityThread").invoke(null)
@@ -188,13 +175,13 @@ class VirtualLauncher(private val context: Context) {
             mInstrumentationField.isAccessible = true
             val base = mInstrumentationField.get(currentActivityThread) as Instrumentation
             if (base !is PotataInstrumentation) {
-                mInstrumentationField.set(currentActivityThread, PotataInstrumentation(base, classLoader, baseApk))
-                PotataApp.addLog("Instrumentation Hook: SUCCESS")
+                mInstrumentationField.set(currentActivityThread, PotataInstrumentation(base, classLoader, baseApk, libDir))
+                PotataApp.addLog("Instrumentation Hook: OK")
             }
         } catch (e: Exception) {}
     }
 
-    private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader, private val baseApk: String) : Instrumentation() {
+    private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader, private val baseApk: String, private val libDir: String) : Instrumentation() {
         override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
             return base.newActivity(classLoader, className, intent)
         }
@@ -213,15 +200,15 @@ class VirtualLauncher(private val context: Context) {
                             info.packageName = "com.chucklefish.stardewvalley"
                             info.sourceDir = baseApk
                             info.publicSourceDir = baseApk
-                            info.nativeLibraryDir = File(baseApk).parentFile?.absolutePath + "/lib"
+                            info.nativeLibraryDir = libDir
                             return info
                         }
                     }
                     val mBaseField = ContextWrapper::class.java.getDeclaredField("mBase")
                     mBaseField.isAccessible = true
                     mBaseField.set(activity, spoofedContext)
-                    PotataApp.addLog("Context Hijack: SUCCESS")
-                } catch (e: Exception) {}
+                    PotataApp.addLog("Activity Identity: SPOOFED")
+                } catch (e: Exception) { PotataApp.addLog("Activity Spoof FAIL") }
             }
             base.callActivityOnCreate(activity, icicle)
         }

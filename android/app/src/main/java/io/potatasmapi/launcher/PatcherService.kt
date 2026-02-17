@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 import java.util.zip.ZipFile
 
 /**
- * The VirtualExtractor (Engine Hijacker Edition).
+ * The VirtualExtractor (Hyper-Diagnostic Edition).
  */
 class PatcherService(private val context: Context) {
     private val TAG = "PotataVirtual"
@@ -19,7 +19,7 @@ class PatcherService(private val context: Context) {
     }
 
     fun importGame(originalApkPaths: List<String>) {
-        log("--- STARTING ENGINE HIJACK ---")
+        log("--- HYPER-IMPORT START ---")
 
         val virtualRoot = File(context.filesDir, "virtual/stardew")
         if (virtualRoot.exists()) virtualRoot.deleteRecursively()
@@ -27,14 +27,16 @@ class PatcherService(private val context: Context) {
 
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
         val sdcardRoot = File(Environment.getExternalStorageDirectory(), "PotataSMAPI")
-        if (!sdcardRoot.exists()) sdcardRoot.mkdirs()
         
-        log("Cleaning old redirection files...")
+        // PURGE GHOSTS
+        log("Purging old redirection folders...")
         File(sdcardRoot, "assets").deleteRecursively()
         File(sdcardRoot, "assemblies").deleteRecursively()
         
         val assetsDir = File(sdcardRoot, "assets").apply { mkdirs() }
         val assemblyDir = File(sdcardRoot, "assemblies").apply { mkdirs() }
+        
+        var totalPatched = 0
         
         originalApkPaths.forEachIndexed { index, path ->
             val sourceFile = if (path.startsWith("content://")) {
@@ -51,103 +53,113 @@ class PatcherService(private val context: Context) {
             log("Cloning segment: $targetName")
             sourceFile.copyTo(virtualApk, overwrite = true)
             
-            extractAndHijack(virtualApk, libDir, assemblyDir, assetsDir)
+            totalPatched += extractAndPatch(virtualApk, libDir, assemblyDir, assetsDir)
             
             virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
         }
 
-        // Inject SMAPI
+        // 3. Inject SMAPI
         log("Injecting SMAPI core...")
         context.assets.open("StardewModdingAPI.dll").use { input ->
             val target = File(assemblyDir, "Stardew Valley.dll")
             target.outputStream().use { input.copyTo(it) }
         }
         
-        log("--- HIJACK SUCCESSFUL ---")
+        log("--- IMPORT SUCCESSFUL ---")
+        log("Files Patched: $totalPatched")
+        log("Engine: SMAPI v4.5.1 Primed.")
         File(virtualRoot, "virtual.ready").createNewFile()
     }
 
-    private fun extractAndHijack(apk: File, libDir: File, assemblyDir: File, assetsDir: File) {
+    private fun extractAndPatch(apk: File, libDir: File, assemblyDir: File, assetsDir: File): Int {
         val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
+        var count = 0
         ZipFile(apk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name
                 
-                // 1. Assemblies to SD Card (Patched)
+                // 1. Assemblies
                 if (name.contains("assemblies/") && name.endsWith(".dll")) {
-                    val fileName = name.substringAfterLast("/")
-                    val target = File(assemblyDir, fileName)
-                    
+                    val target = File(assemblyDir, name.substringAfterLast("/"))
                     zip.getInputStream(entry).use { input ->
                         val bytes = input.readBytes()
-                        target.writeBytes(patchBinaryPaths(bytes))
+                        val patched = patchBinaryPaths(bytes)
+                        if (patched !== bytes) count++
+                        target.writeBytes(patched)
                     }
-                    
-                    if (fileName.equals("Stardew Valley.dll", ignoreCase = true)) {
+                    if (name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
                         target.renameTo(File(assemblyDir, "StardewValley.Vanilla.dll"))
                     }
                 }
                 
-                // 2. Content to SD Card (Patched)
+                // 2. Content (XML/JSON needs patching for path strings)
                 if (name.startsWith("assets/Content/")) {
                     val target = File(assetsDir, name.removePrefix("assets/"))
                     target.parentFile?.mkdirs()
                     zip.getInputStream(entry).use { input ->
-                        if (name.endsWith(".xml") || name.endsWith(".json")) {
+                        if (name.endsWith(".xml") || name.endsWith(".json") || name.endsWith(".txt")) {
                             val bytes = input.readBytes()
-                            target.writeBytes(patchBinaryPaths(bytes))
+                            val patched = patchBinaryPaths(bytes)
+                            if (patched !== bytes) count++
+                            target.writeBytes(patched)
                         } else {
-                            input.copyTo(target.outputStream())
+                            target.outputStream().use { input.copyTo(it) }
                         }
                     }
                 }
                 
-                // 3. Native Lib Hijacking (The "Inception" Step)
+                // 3. Native Libs
                 if (name.startsWith("lib/$preferredAbi/") && name.endsWith(".so")) {
                     val target = File(libDir, name.substringAfterLast("/"))
                     if (!target.exists()) {
                         zip.getInputStream(entry).use { input ->
                             val bytes = input.readBytes()
-                            // We patch the native loader to force it to use our SD Card root
-                            val patchedBytes = patchNativeEngine(bytes)
-                            target.writeBytes(patchedBytes)
+                            val patched = patchBinaryPaths(bytes)
+                            if (patched !== bytes) count++
+                            target.writeBytes(patched)
                         }
                     }
                 }
             }
         }
-    }
-
-    /**
-     * Patches the native Mono/Xamarin engine to prioritize filesystem over APK.
-     */
-    private fun patchNativeEngine(data: ByteArray): ByteArray {
-        val patched = data.copyOf()
-        // We look for 'assemblies' internal strings and point them elsewhere
-        // But first, apply the standard path patching
-        return patchBinaryPaths(patched)
+        return count
     }
 
     private fun patchBinaryPaths(data: ByteArray): ByteArray {
-        val search = "StardewValley".toByteArray()
-        val replace = "PotataSMAPI\u0000\u0000".toByteArray()
-        val patched = data.copyOf()
-        var i = 0
-        while (i <= patched.size - search.size) {
-            var match = true
-            for (j in search.indices) {
-                if (patched[i + j] != search[j]) {
-                    match = false
-                    break
+        // Multi-string search
+        val targets = listOf("StardewValley", "Stardew Valley")
+        val replacement = "PotataSMAPI"
+        var currentData = data
+        var changed = false
+
+        for (target in targets) {
+            val searchBytes = target.toByteArray()
+            // Pad replacement to match target length exactly
+            val replaceBytes = replacement.padEnd(target.length, '\u0000').toByteArray()
+            
+            var i = 0
+            while (i <= currentData.size - searchBytes.size) {
+                var match = true
+                for (j in searchBytes.indices) {
+                    if (currentData[i + j] != searchBytes[j]) {
+                        match = false
+                        break
+                    }
                 }
+                if (match) {
+                    if (!changed) {
+                        currentData = currentData.copyOf()
+                        changed = true
+                    }
+                    for (j in replaceBytes.indices) {
+                        currentData[i + j] = replaceBytes[j]
+                    }
+                    i += searchBytes.size
+                } else i++
             }
-            if (match) {
-                for (j in replace.indices) patched[i + j] = replace[j]
-                i += search.size
-            } else i++
         }
-        return patched
+        return currentData
     }
 
     private fun copyUriToFile(uri: android.net.Uri, outFile: File) {
