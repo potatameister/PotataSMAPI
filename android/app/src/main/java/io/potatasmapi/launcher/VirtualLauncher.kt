@@ -34,12 +34,13 @@ class VirtualLauncher(private val context: Context) {
             val allApks = virtualRoot.listFiles()?.filter { it.name.endsWith(".apk") } ?: emptyList()
             if (allApks.isEmpty()) throw Exception("No source APKs.")
 
+            PotataApp.addLog("Target: ${activityName ?: "Default"}")
             val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
             // 1. Load Code (Background Thread)
-            PotataApp.addLog("Loading virtual code...")
+            PotataApp.addLog("Loading virtual code (${allApks.size} APKs)...")
             val classLoader = DexClassLoader(dexPath, optimizedDexPath, nativeLibPath, context.classLoader)
 
             val targetActivity = activityName ?: "com.chucklefish.stardewvalley.StardewValley"
@@ -50,7 +51,8 @@ class VirtualLauncher(private val context: Context) {
                 android.system.Os.setenv("MONO_PATH", monoDir.absolutePath, true)
                 android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
                 android.system.Os.setenv("HOME", "/sdcard/PotataSMAPI", true)
-            } catch (e: Exception) {}
+                PotataApp.addLog("Mono redirection set.")
+            } catch (e: Exception) { PotataApp.addLog("Env set failed: ${e.message}") }
 
             // 3. Inject Hook (The Bridge)
             injectInstrumentation(classLoader)
@@ -58,18 +60,24 @@ class VirtualLauncher(private val context: Context) {
 
             // 4. Start Activity
             (context as Activity).runOnUiThread {
-                val intent = Intent().apply {
-                    setClassName(context.packageName, targetActivity)
-                    putExtra("VIRTUAL_MODE", true)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    val intent = Intent().apply {
+                        setClassName(context.packageName, targetActivity)
+                        putExtra("VIRTUAL_MODE", true)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    onComplete()
+                    PotataApp.addLog("Activity Intent Sent.")
+                } catch (e: Exception) {
+                    PotataApp.addLog("Activity Launch Failed: ${e.message}")
+                    onComplete()
                 }
-                context.startActivity(intent)
-                onComplete()
-                PotataApp.addLog("Engine handoff successful.")
             }
 
         } catch (e: Exception) {
             PotataApp.addLog("Launch Failed: ${e.message}")
+            Log.e(TAG, "Launch error", e)
             (context as Activity).runOnUiThread { onComplete() }
         }
     }

@@ -11,9 +11,18 @@ import java.io.File
 class PotataApp : Application() {
     companion object {
         val logs = mutableStateListOf<String>()
+        private var logFile: File? = null
+
         fun addLog(msg: String) {
             Log.d("Potata", msg)
             logs.add(0, msg) // Newest first
+            saveLogToFile(msg)
+        }
+
+        private fun saveLogToFile(msg: String) {
+            try {
+                logFile?.appendText("[${java.util.Date()}] $msg\n")
+            } catch (e: Exception) {}
         }
     }
     
@@ -31,6 +40,15 @@ class PotataApp : Application() {
         super.onCreate()
         System.setProperty("user.home", filesDir.absolutePath)
         
+        // Initialize persistent log
+        val logDir = File("/sdcard/PotataSMAPI")
+        if (!logDir.exists()) logDir.mkdirs()
+        logFile = File(logDir, "launcher_log.txt")
+        if (logFile?.exists() == true && logFile!!.length() > 1024 * 1024) {
+            logFile?.delete() // Clear if > 1MB
+        }
+        addLog("--- NEW SESSION ---")
+
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
                 mountAssets(activity)

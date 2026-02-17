@@ -249,6 +249,14 @@ class MainActivity : ComponentActivity() {
             loadMods()
             val virtualMarker = File(filesDir, "virtual/stardew/virtual.ready")
             if (virtualMarker.exists()) isPatched = true
+            
+            // Load persistent logs
+            val logFile = File("/sdcard/PotataSMAPI/launcher_log.txt")
+            if (logFile.exists()) {
+                val lastLogs = logFile.readLines().takeLast(100).reversed()
+                PotataApp.logs.clear()
+                PotataApp.logs.addAll(lastLogs)
+            }
         }
 
         Column(
@@ -441,13 +449,19 @@ class MainActivity : ComponentActivity() {
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.List, contentDescription = null, tint = StardewGold, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("VIRTUAL LOGS", color = StardewGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Text(if (consoleExpanded) "CLOSE" else "VIEW LOGS", color = Color.Gray, fontSize = 9.sp)
-                    }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.List, contentDescription = null, tint = StardewGold, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("VIRTUAL LOGS", color = StardewGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.weight(1f))
+                            TextButton(onClick = { 
+                                File("/sdcard/PotataSMAPI/launcher_log.txt").delete()
+                                PotataApp.logs.clear()
+                            }) {
+                                Text("CLEAR", color = Color.Red.copy(0.7f), fontSize = 9.sp)
+                            }
+                            Text(if (consoleExpanded) "CLOSE" else "VIEW LOGS", color = Color.Gray, fontSize = 9.sp)
+                        }
                     if (consoleExpanded) {
                         Spacer(modifier = Modifier.height(8.dp))
                         LazyColumn(modifier = Modifier.height(150.dp)) {
