@@ -125,14 +125,13 @@ class VirtualLauncher(private val context: Context) {
             val loadedApk = loadedApkWeakRef.get() ?: return
             val loadedApkClass = Class.forName("android.app.LoadedApk")
             
-            // Swap fields
+            // Swap fields (NO PackageName spoofing here to avoid vanilla save overlap)
             val fields = mapOf(
                 "mClassLoader" to classLoader,
                 "mAppDir" to baseApk,
                 "mResDir" to baseApk,
                 "mLibDir" to libDir,
-                "mDataDir" to dataDir,
-                "mPackageName" to "com.chucklefish.stardewvalley"
+                "mDataDir" to dataDir
             )
 
             for ((name, value) in fields) {
@@ -142,6 +141,15 @@ class VirtualLauncher(private val context: Context) {
                     field.set(loadedApk, value)
                 } catch (e: Exception) {}
             }
+            
+            // Set isolated environment
+            try {
+                val osClass = Class.forName("android.system.Os")
+                val setenvMethod = osClass.getMethod("setenv", String::class.java, String::class.java, Boolean::class.javaPrimitiveType)
+                setenvMethod.invoke(null, "ANDROID_DATA", dataDir, true)
+                setenvMethod.invoke(null, "HOME", dataDir, true)
+            } catch (e: Exception) { Log.w(TAG, "Env redirection failed") }
+
         } catch (e: Exception) { Log.e(TAG, "LoadedApk hook failed", e) }
     }
 
