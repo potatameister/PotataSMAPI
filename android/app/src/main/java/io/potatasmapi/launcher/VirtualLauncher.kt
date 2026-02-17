@@ -15,8 +15,8 @@ import java.io.File
 import java.lang.reflect.Field
 
 /**
- * VirtualLauncher: The Mono Hijacker.
- * Uses MONO_PATH to force the game to load SMAPI from the filesystem.
+ * VirtualLauncher: The Async-Stable Bootloader.
+ * Prevents ANR (Not Responding) by safe timing of system hooks.
  */
 class VirtualLauncher(private val context: Context) {
     private val TAG = "PotataLauncher"
@@ -28,38 +28,35 @@ class VirtualLauncher(private val context: Context) {
             val assetsDir = File(virtualRoot, "assets")
             
             if (!File(virtualRoot, "virtual.ready").exists()) {
-                throw Exception("Virtual environment not ready.")
+                throw Exception("Environment not ready.")
             }
 
             val allApks = virtualRoot.listFiles()?.filter { it.name.endsWith(".apk") } ?: emptyList()
-            if (allApks.isEmpty()) throw Exception("No source APKs found.")
+            if (allApks.isEmpty()) throw Exception("No source APKs.")
 
             val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
-            // Create ClassLoader from ORIGINAL APKs (Fixed black screen)
+            // 1. Load Code (Background Thread)
+            PotataApp.addLog("Loading virtual code...")
             val classLoader = DexClassLoader(dexPath, optimizedDexPath, nativeLibPath, context.classLoader)
 
             val targetActivity = activityName ?: "com.chucklefish.stardewvalley.StardewValley"
             
-            // Apply System Hooks
-            System.setProperty("user.dir", "/sdcard/PotataSMAPI")
-            System.setProperty("user.home", "/sdcard/PotataSMAPI")
-            
+            // 2. Setup Redirection (Environment)
+            try {
+                val monoDir = File(assetsDir, "assemblies")
+                android.system.Os.setenv("MONO_PATH", monoDir.absolutePath, true)
+                android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
+                android.system.Os.setenv("HOME", "/sdcard/PotataSMAPI", true)
+            } catch (e: Exception) {}
+
+            // 3. Inject Hook (The Bridge)
             injectInstrumentation(classLoader)
             injectVirtualResources(dexPath)
 
-            // THE MONO HIJACK: Redirect DLL loading to our extracted folder
-            try {
-                val monoAssemblyDir = File(assetsDir, "assemblies")
-                android.system.Os.setenv("MONO_PATH", monoAssemblyDir.absolutePath, true)
-                android.system.Os.setenv("MONO_EXTERNAL_ASSEMBLIES", monoAssemblyDir.absolutePath, true)
-                android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
-                android.system.Os.setenv("HOME", "/sdcard/PotataSMAPI", true)
-                PotataApp.addLog("Mono redirection active.")
-            } catch (e: Exception) {}
-
+            // 4. Start Activity
             (context as Activity).runOnUiThread {
                 val intent = Intent().apply {
                     setClassName(context.packageName, targetActivity)
@@ -68,12 +65,12 @@ class VirtualLauncher(private val context: Context) {
                 }
                 context.startActivity(intent)
                 onComplete()
-                PotataApp.addLog("Stardew engine redirected to SMAPI.")
+                PotataApp.addLog("Engine handoff successful.")
             }
 
         } catch (e: Exception) {
             PotataApp.addLog("Launch Failed: ${e.message}")
-            onComplete()
+            (context as Activity).runOnUiThread { onComplete() }
         }
     }
 
@@ -110,24 +107,30 @@ class VirtualLauncher(private val context: Context) {
 
     private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader) : Instrumentation() {
         override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
-            val loaderToUse = if (className?.contains("chucklefish") == true) classLoader else cl
-            val activity = base.newActivity(loaderToUse, className, intent)
-            try {
-                val spoofedContext = object : ContextWrapper(activity.baseContext) {
-                    override fun getPackageName(): String = "com.chucklefish.stardewvalley"
-                    override fun getExternalFilesDir(type: String?): File? = File("/sdcard/PotataSMAPI/Files")
-                    override fun getFilesDir(): File = File("/sdcard/PotataSMAPI/Internal")
-                }
-                ContextWrapper::class.java.getDeclaredField("mBase").apply { isAccessible = true }.set(activity, spoofedContext)
-            } catch (e: Exception) {}
-            return activity
+            // Give our virtual loader only to the game
+            val loader = if (className?.contains("chucklefish") == true) classLoader else cl
+            return base.newActivity(loader, className, intent)
         }
 
         override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
-            try {
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                android.widget.Toast.makeText(activity, "POTATA: REDIRECTING MONO...", android.widget.Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {}
+            // SPOOF IDENTITY HERE (After attach, before onCreate)
+            if (activity.javaClass.name.contains("chucklefish")) {
+                try {
+                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    
+                    val spoofedContext = object : ContextWrapper(activity.baseContext) {
+                        override fun getPackageName(): String = "com.chucklefish.stardewvalley"
+                        override fun getExternalFilesDir(type: String?): File? = File("/sdcard/PotataSMAPI/Files")
+                        override fun getFilesDir(): File = File("/sdcard/PotataSMAPI/Internal")
+                    }
+                    
+                    val mBaseField = ContextWrapper::class.java.getDeclaredField("mBase")
+                    mBaseField.isAccessible = true
+                    mBaseField.set(activity, spoofedContext)
+                    
+                    android.widget.Toast.makeText(activity, "POTATA SMAPI ACTIVE", android.widget.Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) { Log.e("Potata", "Spoof failed", e) }
+            }
             base.callActivityOnCreate(activity, icicle)
         }
 
