@@ -68,6 +68,7 @@ class VirtualLauncher(private val context: Context) {
             // 5. Hook the Activity Thread (The "Brain" of the App)
             PotataApp.addLog("Redirecting System Context...")
             injectVirtualLoader(classLoader, dexPath)
+            injectInstrumentation(classLoader)
 
             // 5.1 Hook the current context's PackageInfo (Nuclear Option)
             try {
@@ -177,44 +178,39 @@ class VirtualLauncher(private val context: Context) {
      * Injects the game APK(s) into the resource search path.
      */
     @SuppressLint("DiscouragedPrivateApi")
-    private fun injectVirtualResources(dexPath: String) {
+    private fun injectInstrumentation(classLoader: ClassLoader) {
         try {
-            val apkPaths = dexPath.split(File.pathSeparator).toTypedArray()
-            
             val activityThreadClass = Class.forName("android.app.ActivityThread")
             val currentActivityThreadMethod = activityThreadClass.getDeclaredMethod("currentActivityThread")
             currentActivityThreadMethod.isAccessible = true
             val currentActivityThread = currentActivityThreadMethod.invoke(null)
 
-            val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
-            mPackagesField.isAccessible = true
-            val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
-
-            val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
-            val loadedApk = loadedApkWeakRef.get() ?: return
-
-            val loadedApkClass = Class.forName("android.app.LoadedApk")
+            val mInstrumentationField = activityThreadClass.getDeclaredField("mInstrumentation")
+            mInstrumentationField.isAccessible = true
+            val baseInstrumentation = mInstrumentationField.get(currentActivityThread) as Instrumentation
             
-            // Add to mSplitResDirs
-            val mSplitResDirsField = loadedApkClass.getDeclaredField("mSplitResDirs")
-            mSplitResDirsField.isAccessible = true
-            val currentDirs = mSplitResDirsField.get(loadedApk) as? Array<String>
-            
-            val newDirsSet = mutableSetOf<String>()
-            currentDirs?.let { newDirsSet.addAll(it) }
-            newDirsSet.addAll(apkPaths)
-            
-            mSplitResDirsField.set(loadedApk, newDirsSet.toTypedArray())
-
-            // Force resources refresh
-            val mResourcesField = loadedApkClass.getDeclaredField("mResources")
-            mResourcesField.isAccessible = true
-            mResourcesField.set(loadedApk, null)
-
-            PotataApp.addLog("System Resources Augmented (${apkPaths.size} APKs).")
+            val wrapper = PotataInstrumentation(baseInstrumentation, classLoader)
+            mInstrumentationField.set(currentActivityThread, wrapper)
+            PotataApp.addLog("Instrumentation Hooked.")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to inject resources", e)
-            PotataApp.addLog("Warning: Resource injection failed.")
+            Log.e(TAG, "Instrumentation injection failed", e)
         }
+    }
+
+    /**
+     * A custom Instrumentation that forces the use of our Virtual ClassLoader.
+     */
+    private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader) : Instrumentation() {
+        override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
+            // Force use our virtual classloader instead of the system one
+            return base.newActivity(classLoader, className, intent)
+        }
+
+        override fun onCreate(arguments: Bundle?) { base.onCreate(arguments) }
+        override fun onStart() { base.onStart() }
+        override fun onResume() { base.onResume() }
+        override fun onPause() { base.onPause() }
+        override fun onDestroy() { base.onDestroy() }
+        // Pass-through other methods as needed...
     }
 }
