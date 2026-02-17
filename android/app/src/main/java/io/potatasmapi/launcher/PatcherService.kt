@@ -45,7 +45,7 @@ class PatcherService(private val context: Context) {
             sourceFile.copyTo(virtualApk, overwrite = true)
             
             // Extract code and content
-            extractAssets(virtualApk, libDir, assetsDir, assemblyDir)
+            extractAssets(virtualApk, libDir, assetsDir, assemblyDir, virtualRoot)
             
             virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
@@ -64,17 +64,23 @@ class PatcherService(private val context: Context) {
         File(virtualRoot, "virtual.ready").createNewFile()
     }
 
-    private fun extractAssets(apk: File, libDir: File, assetsDir: File, assemblyDir: File) {
+    private fun extractAssets(apk: File, libDir: File, assetsDir: File, assemblyDir: File, virtualRoot: File) {
         val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
         ZipFile(apk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name
                 
-                // 1. Extract DLLs (Assemblies)
+                // 1. Extract and Patch DLLs (Assemblies)
                 if (name.contains("assemblies/") && name.endsWith(".dll")) {
                     val target = File(assetsDir, name.removePrefix("assets/"))
                     target.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { it.copyTo(target.outputStream()) }
+                    
+                    zip.getInputStream(entry).use { input ->
+                        val bytes = input.readBytes()
+                        // Patch hardcoded paths in the DLL bytes (Length-safe)
+                        val patchedBytes = patchBinaryPaths(bytes)
+                        target.writeBytes(patchedBytes)
+                    }
                     
                     if (name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
                         val vanilla = File(target.parentFile, "StardewValley.Vanilla.dll")
@@ -82,22 +88,59 @@ class PatcherService(private val context: Context) {
                     }
                 }
                 
-                // 2. Extract Game Content (Essential for textures/audio)
+                // 2. Extract and Patch Game Content (Essential for textures/audio)
                 if (name.startsWith("assets/Content/")) {
                     val target = File(virtualRoot, name)
                     target.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { it.copyTo(target.outputStream()) }
+                    
+                    zip.getInputStream(entry).use { input ->
+                        if (name.endsWith(".xml") || name.endsWith(".json")) {
+                            val bytes = input.readBytes()
+                            target.writeBytes(patchBinaryPaths(bytes))
+                        } else {
+                            input.copyTo(target.outputStream())
+                        }
+                    }
                 }
                 
-                // 3. Extract Native Libs
+                // 3. Extract and Patch Native Libs
                 if (name.startsWith("lib/$preferredAbi/") && name.endsWith(".so")) {
                     val target = File(libDir, File(name).name)
                     if (!target.exists()) {
-                        zip.getInputStream(entry).use { it.copyTo(target.outputStream()) }
+                        zip.getInputStream(entry).use { input ->
+                            val bytes = input.readBytes()
+                            target.writeBytes(patchBinaryPaths(bytes))
+                        }
                     }
                 }
             }
         }
+    }
+
+    private fun patchBinaryPaths(data: ByteArray): ByteArray {
+        val search = "StardewValley".toByteArray()
+        val replace = "PotataSMAPI\u0000\u0000".toByteArray()
+        val patched = data.copyOf()
+        
+        var i = 0
+        while (i <= patched.size - search.size) {
+            var match = true
+            for (j in search.indices) {
+                if (patched[i + j] != search[j]) {
+                    match = false
+                    break
+                }
+            }
+            if (match) {
+                for (j in replace.indices) {
+                    patched[i + j] = replace[j]
+                }
+                i += search.size
+            } else {
+                i++
+            }
+        }
+        return patched
     }
 
     private fun copyUriToFile(uri: android.net.Uri, outFile: File) {
