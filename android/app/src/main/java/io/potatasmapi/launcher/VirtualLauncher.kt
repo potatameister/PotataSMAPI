@@ -15,8 +15,8 @@ import java.io.File
 import java.lang.reflect.Field
 
 /**
- * VirtualLauncher: The Async Bootloader.
- * Keeps the UI responsive while preparing the modded environment.
+ * VirtualLauncher: The Mono Hijacker.
+ * Uses MONO_PATH to force the game to load SMAPI from the filesystem.
  */
 class VirtualLauncher(private val context: Context) {
     private val TAG = "PotataLauncher"
@@ -25,20 +25,20 @@ class VirtualLauncher(private val context: Context) {
         try {
             val virtualRoot = File(context.filesDir, "virtual/stardew")
             val libDir = File(virtualRoot, "lib")
+            val assetsDir = File(virtualRoot, "assets")
             
             if (!File(virtualRoot, "virtual.ready").exists()) {
                 throw Exception("Virtual environment not ready.")
             }
 
             val allApks = virtualRoot.listFiles()?.filter { it.name.endsWith(".apk") } ?: emptyList()
-            if (allApks.isEmpty()) throw Exception("No patched APKs found.")
-            allApks.forEach { if (it.canWrite()) it.setReadOnly() }
+            if (allApks.isEmpty()) throw Exception("No source APKs found.")
 
             val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
-            // Create ClassLoader (This takes time, hence on a background thread)
+            // Create ClassLoader from ORIGINAL APKs (Fixed black screen)
             val classLoader = DexClassLoader(dexPath, optimizedDexPath, nativeLibPath, context.classLoader)
 
             val targetActivity = activityName ?: "com.chucklefish.stardewvalley.StardewValley"
@@ -50,7 +50,16 @@ class VirtualLauncher(private val context: Context) {
             injectInstrumentation(classLoader)
             injectVirtualResources(dexPath)
 
-            // Start Activity on Main Thread
+            // THE MONO HIJACK: Redirect DLL loading to our extracted folder
+            try {
+                val monoAssemblyDir = File(assetsDir, "assemblies")
+                android.system.Os.setenv("MONO_PATH", monoAssemblyDir.absolutePath, true)
+                android.system.Os.setenv("MONO_EXTERNAL_ASSEMBLIES", monoAssemblyDir.absolutePath, true)
+                android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
+                android.system.Os.setenv("HOME", "/sdcard/PotataSMAPI", true)
+                PotataApp.addLog("Mono redirection active.")
+            } catch (e: Exception) {}
+
             (context as Activity).runOnUiThread {
                 val intent = Intent().apply {
                     setClassName(context.packageName, targetActivity)
@@ -59,7 +68,7 @@ class VirtualLauncher(private val context: Context) {
                 }
                 context.startActivity(intent)
                 onComplete()
-                PotataApp.addLog("Farm engine successfully hijacked.")
+                PotataApp.addLog("Stardew engine redirected to SMAPI.")
             }
 
         } catch (e: Exception) {
@@ -117,7 +126,7 @@ class VirtualLauncher(private val context: Context) {
         override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
             try {
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                android.widget.Toast.makeText(activity, "POTATA: BOOTING MODDED ENGINE...", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(activity, "POTATA: REDIRECTING MONO...", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {}
             base.callActivityOnCreate(activity, icicle)
         }
