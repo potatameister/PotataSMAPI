@@ -69,6 +69,19 @@ class VirtualLauncher(private val context: Context) {
             PotataApp.addLog("Redirecting System Context...")
             injectVirtualLoader(classLoader, dexPath)
 
+            // 5.1 Hook the current context's PackageInfo (Nuclear Option)
+            try {
+                val baseContext = (context as? ContextWrapper)?.baseContext ?: context
+                val mPackageInfoField = baseContext.javaClass.getDeclaredField("mPackageInfo")
+                mPackageInfoField.isAccessible = true
+                val mPackageInfo = mPackageInfoField.get(baseContext)
+                
+                val mClassLoaderField = mPackageInfo.javaClass.getDeclaredField("mClassLoader")
+                mClassLoaderField.isAccessible = true
+                mClassLoaderField.set(mPackageInfo, classLoader)
+                PotataApp.addLog("Context mPackageInfo Hooked.")
+            } catch (e: Exception) { Log.w(TAG, "Context hook failed: ${e.message}") }
+
             // 5.5 Hook Resources globally
             injectVirtualResources(dexPath)
 
