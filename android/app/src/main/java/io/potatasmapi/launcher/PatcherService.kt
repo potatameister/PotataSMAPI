@@ -75,8 +75,9 @@ class PatcherService(private val context: Context) {
                         }
                     }
 
-                    // 2. Extract Assets (Content)
-                    entries.filter { it.name.startsWith("assets/") && !it.isDirectory }.forEach { entry ->
+                    // 2. Extract Assets (ONLY Content/ folder, ignore others to save space)
+                    // We extract these because game engines often fail to read sub-folders from APKs directly
+                    entries.filter { it.name.startsWith("assets/Content/") && !it.isDirectory }.forEach { entry ->
                         val target = File(virtualRoot, entry.name)
                         if (!target.exists()) {
                             target.parentFile?.mkdirs()
@@ -95,7 +96,7 @@ class PatcherService(private val context: Context) {
             }
             
             log("Import Successful!")
-            log("Cartridge ready for Virtual Launch.")
+            log("Storage Optimized: Using Hybrid APK/Extraction.")
             File(virtualRoot, "virtual.ready").createNewFile()
 
         } catch (e: Exception) {

@@ -68,7 +68,15 @@ class VirtualLauncher(private val context: Context) {
             injectInstrumentation(classLoader)
             injectVirtualResources(dexPath)
 
-            // 6. Launch
+            // 6. Bootstrap SMAPI
+            // We set the MONO_PATH to include our virtual root so SMAPI.dll is seen
+            try {
+                android.system.Os.setenv("MONO_PATH", virtualRoot.absolutePath, true)
+                android.system.Os.setenv("SMAPI_ASSEMBLY", "StardewModdingAPI.dll", true)
+                PotataApp.addLog("SMAPI Bootstrapper Primed.")
+            } catch (e: Exception) { Log.w(TAG, "SMAPI env failed") }
+
+            // 7. Launch
             val intent = Intent().apply {
                 setClassName(context.packageName, targetActivity)
                 putExtra("VIRTUAL_MODE", true)
@@ -125,7 +133,7 @@ class VirtualLauncher(private val context: Context) {
             val loadedApk = loadedApkWeakRef.get() ?: return
             val loadedApkClass = Class.forName("android.app.LoadedApk")
             
-            // Swap fields (Restoring PackageName spoofing to fix crash)
+            // Swap fields
             val fields = mapOf(
                 "mClassLoader" to classLoader,
                 "mAppDir" to baseApk,
@@ -143,12 +151,11 @@ class VirtualLauncher(private val context: Context) {
                 } catch (e: Exception) {}
             }
             
-            // Set isolated environment (Native)
+            // Set isolated environment
             try {
                 android.system.Os.setenv("ANDROID_DATA", dataDir, true)
                 android.system.Os.setenv("HOME", dataDir, true)
-                android.system.Os.setenv("GAME_SAVE_PATH", "/sdcard/PotataSMAPI", true)
-            } catch (e: Exception) { Log.w(TAG, "Env redirection failed") }
+            } catch (e: Exception) {}
 
         } catch (e: Exception) { Log.e(TAG, "LoadedApk hook failed", e) }
     }
@@ -216,8 +223,15 @@ class VirtualLauncher(private val context: Context) {
                 val baseContext = activity.baseContext
                 val spoofedContext = object : ContextWrapper(baseContext) {
                     override fun getPackageName(): String = "com.chucklefish.stardewvalley"
+                    
+                    // Redirect SD Card / Hardcoded paths
                     override fun getExternalFilesDir(type: String?): File? = File("/sdcard/PotataSMAPI/Files")
                     override fun getFilesDir(): File = File("/sdcard/PotataSMAPI/Internal")
+                    
+                    override fun getSystemService(name: String): Any? {
+                        // Potential hook for storage manager if needed
+                        return super.getSystemService(name)
+                    }
                 }
                 val mBaseField = ContextWrapper::class.java.getDeclaredField("mBase")
                 mBaseField.isAccessible = true
