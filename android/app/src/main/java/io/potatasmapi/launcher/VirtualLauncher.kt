@@ -125,13 +125,14 @@ class VirtualLauncher(private val context: Context) {
             val loadedApk = loadedApkWeakRef.get() ?: return
             val loadedApkClass = Class.forName("android.app.LoadedApk")
             
-            // Swap fields (NO PackageName spoofing here to avoid vanilla save overlap)
+            // Swap fields (Restoring PackageName spoofing to fix crash)
             val fields = mapOf(
                 "mClassLoader" to classLoader,
                 "mAppDir" to baseApk,
                 "mResDir" to baseApk,
                 "mLibDir" to libDir,
-                "mDataDir" to dataDir
+                "mDataDir" to dataDir,
+                "mPackageName" to "com.chucklefish.stardewvalley"
             )
 
             for ((name, value) in fields) {
@@ -142,12 +143,11 @@ class VirtualLauncher(private val context: Context) {
                 } catch (e: Exception) {}
             }
             
-            // Set isolated environment
+            // Set isolated environment (Native)
             try {
-                val osClass = Class.forName("android.system.Os")
-                val setenvMethod = osClass.getMethod("setenv", String::class.java, String::class.java, Boolean::class.javaPrimitiveType)
-                setenvMethod.invoke(null, "ANDROID_DATA", dataDir, true)
-                setenvMethod.invoke(null, "HOME", dataDir, true)
+                android.system.Os.setenv("ANDROID_DATA", dataDir, true)
+                android.system.Os.setenv("HOME", dataDir, true)
+                android.system.Os.setenv("GAME_SAVE_PATH", "/sdcard/PotataSMAPI", true)
             } catch (e: Exception) { Log.w(TAG, "Env redirection failed") }
 
         } catch (e: Exception) { Log.e(TAG, "LoadedApk hook failed", e) }
@@ -209,7 +209,22 @@ class VirtualLauncher(private val context: Context) {
 
     private class PotataInstrumentation(private val base: Instrumentation, private val classLoader: ClassLoader) : Instrumentation() {
         override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
-            return base.newActivity(classLoader, className, intent)
+            val activity = base.newActivity(classLoader, className, intent)
+            
+            // Context Spoofing (Package & Paths)
+            try {
+                val baseContext = activity.baseContext
+                val spoofedContext = object : ContextWrapper(baseContext) {
+                    override fun getPackageName(): String = "com.chucklefish.stardewvalley"
+                    override fun getExternalFilesDir(type: String?): File? = File("/sdcard/PotataSMAPI/Files")
+                    override fun getFilesDir(): File = File("/sdcard/PotataSMAPI/Internal")
+                }
+                val mBaseField = ContextWrapper::class.java.getDeclaredField("mBase")
+                mBaseField.isAccessible = true
+                mBaseField.set(activity, spoofedContext)
+            } catch (e: Exception) { Log.e("Potata", "Context Spoof Failed", e) }
+
+            return activity
         }
 
         override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
