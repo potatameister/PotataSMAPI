@@ -5,11 +5,13 @@ import android.os.Build
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 /**
- * The VirtualExtractor (Refined).
- * Surgically prepares the "Virtual Cartridge" for the loader.
+ * The VirtualExtractor (Ultra).
+ * Strips the vanilla C# code from the APK to force SMAPI loading.
  */
 class PatcherService(private val context: Context) {
     private val TAG = "PotataVirtual"
@@ -19,17 +21,18 @@ class PatcherService(private val context: Context) {
     }
 
     fun importGame(originalApkPaths: List<String>) {
-        log("Mounting Virtual Workspace...")
+        log("Surgical Workspace Initialization...")
 
         val virtualRoot = File(context.filesDir, "virtual/stardew")
         if (virtualRoot.exists()) virtualRoot.deleteRecursively()
         virtualRoot.mkdirs()
 
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
+        val assetsDir = File(virtualRoot, "assets").apply { mkdirs() }
         
-        log("Scanning Cartridge...")
+        log("Importing ${originalApkPaths.size} segments...")
         
-        val apkFiles = originalApkPaths.mapIndexed { index, path ->
+        originalApkPaths.forEachIndexed { index, path ->
             val sourceFile = if (path.startsWith("content://")) {
                 val tmp = File(context.cacheDir, "temp_source_$index.apk")
                 copyUriToFile(android.net.Uri.parse(path), tmp)
@@ -40,74 +43,65 @@ class PatcherService(private val context: Context) {
             
             val targetName = if (index == 0) "base.apk" else "split_$index.apk"
             val virtualApk = File(virtualRoot, targetName)
-            sourceFile.copyTo(virtualApk, overwrite = true)
-            virtualApk.setReadOnly()
+
+            if (index == 0) {
+                log("Cleaning Engine: ${sourceFile.name}")
+                cleanAndCopyApk(sourceFile, virtualApk, libDir)
+            } else {
+                log("Copying Segment: ${sourceFile.name}")
+                sourceFile.copyTo(virtualApk, overwrite = true)
+            }
             
+            virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
-            virtualApk
         }
 
-        try {
-            log("Architecture: ${Build.SUPPORTED_ABIS.joinToString()}")
-            val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
-            log("Selecting Engine: $preferredAbi")
+        // 3. Inject SMAPI Engine
+        log("Injecting SMAPI Core...")
+        context.assets.open("StardewModdingAPI.dll").use { input ->
+            File(assetsDir, "Stardew Valley.dll").outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        
+        log("Import Successful!")
+        log("Size Optimized. SMAPI Ready.")
+        File(virtualRoot, "virtual.ready").createNewFile()
+    }
 
-            apkFiles.forEach { apkFile ->
-                log("Unpacking: ${apkFile.name}")
-                ZipFile(apkFile).use { zip ->
-                    val entries = zip.entries().asSequence().toList()
+    /**
+     * Copies the APK but REMOVES the vanilla DLLs.
+     * This forces Mono to look at our MONO_PATH for the modified DLLs.
+     */
+    private fun cleanAndCopyApk(source: File, target: File, libDir: File) {
+        val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
+        
+        ZipFile(source).use { zip ->
+            ZipOutputStream(FileOutputStream(target)).use { out ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
                     
-                    // 1. Extract Native Engine (.so files)
-                    val libEntries = entries.filter { it.name.startsWith("lib/$preferredAbi/") && it.name.endsWith(".so") }
-                    if (libEntries.isEmpty() && preferredAbi == "arm64-v8a") {
-                        entries.filter { it.name.startsWith("lib/armeabi-v7a/") && it.name.endsWith(".so") }.forEach { entry ->
-                            val target = File(libDir, File(entry.name).name)
-                            if (!target.exists()) {
-                                zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
-                            }
-                        }
-                    } else {
-                        libEntries.forEach { entry ->
-                            val target = File(libDir, File(entry.name).name)
-                            if (!target.exists()) {
-                                zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
-                            }
+                    // Skip the vanilla DLL (the core of the redirection)
+                    if (entry.name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
+                        continue 
+                    }
+
+                    // Extract Native Libs to filesystem while copying others
+                    if (entry.name.startsWith("lib/$preferredAbi/") && entry.name.endsWith(".so")) {
+                        val libFile = File(libDir, File(entry.name).name)
+                        zip.getInputStream(entry).use { input ->
+                            libFile.outputStream().use { output -> input.copyTo(output) }
                         }
                     }
 
-                    // 2. Extract Assets (Content + DLLs)
-                    entries.filter { (it.name.startsWith("assets/Content/") || it.name.endsWith(".dll")) && !it.isDirectory }.forEach { entry ->
-                        val target = File(virtualRoot, if (entry.name.startsWith("assets/")) entry.name else "assets/${entry.name}")
-                        if (!target.exists()) {
-                            target.parentFile?.mkdirs()
-                            zip.getInputStream(entry).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
-                        }
-                    }
+                    // Copy entry to new APK
+                    val newEntry = ZipEntry(entry.name)
+                    out.putNextEntry(newEntry)
+                    zip.getInputStream(entry).use { input -> input.copyTo(out) }
+                    out.closeEntry()
                 }
             }
-
-            // 3. Redirect DLLs
-            log("Redirecting assemblies...")
-            val vanillaDll = File(virtualRoot, "assets/Stardew Valley.dll")
-            if (vanillaDll.exists()) {
-                vanillaDll.renameTo(File(virtualRoot, "assets/StardewValley.Vanilla.dll"))
-            }
-
-            // 4. Inject SMAPI Engine
-            log("Injecting SMAPI Core...")
-            context.assets.open("StardewModdingAPI.dll").use { input ->
-                File(virtualRoot, "assets/Stardew Valley.dll").outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-            
-            log("Import Successful!")
-            log("SMAPI Hybrid Injector Ready.")
-            File(virtualRoot, "virtual.ready").createNewFile()
-
-        } catch (e: Exception) {
-            log("Import Error: ${e.localizedMessage}")
-            throw e
         }
     }
 

@@ -25,6 +25,7 @@ class VirtualLauncher(private val context: Context) {
         try {
             val virtualRoot = File(context.filesDir, "virtual/stardew")
             val libDir = File(virtualRoot, "lib")
+            val assetsDir = File(virtualRoot, "assets")
             
             if (!File(virtualRoot, "virtual.ready").exists()) {
                 throw Exception("Virtual environment not ready. Please import first.")
@@ -68,15 +69,14 @@ class VirtualLauncher(private val context: Context) {
             injectInstrumentation(classLoader)
             injectVirtualResources(dexPath)
 
-            // 6. Bootstrap SMAPI
-            // We set the MONO_PATH to include our virtual assets folder so our redirected Stardew Valley.dll is seen
+            // 6. Bootstrap SMAPI (The Redirection)
             try {
-                val assetsDir = File(virtualRoot, "assets")
                 android.system.Os.setenv("MONO_PATH", assetsDir.absolutePath, true)
                 android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", "/sdcard/PotataSMAPI", true)
-                android.system.Os.setenv("SMAPI_AUTO_LOAD", "1", true)
-                PotataApp.addLog("SMAPI Bootstrapper Primed.")
-            } catch (e: Exception) { Log.w(TAG, "SMAPI env failed") }
+                android.system.Os.setenv("EXTERNAL_STORAGE", "/sdcard/PotataSMAPI", true)
+                android.system.Os.setenv("HOME", "/sdcard/PotataSMAPI", true)
+                PotataApp.addLog("SMAPI Environment Primed.")
+            } catch (e: Exception) { Log.w(TAG, "Env failed") }
 
             // 7. Launch
             val intent = Intent().apply {
@@ -152,13 +152,6 @@ class VirtualLauncher(private val context: Context) {
                     field.set(loadedApk, value)
                 } catch (e: Exception) {}
             }
-            
-            // Set isolated environment
-            try {
-                android.system.Os.setenv("ANDROID_DATA", dataDir, true)
-                android.system.Os.setenv("HOME", dataDir, true)
-            } catch (e: Exception) {}
-
         } catch (e: Exception) { Log.e(TAG, "LoadedApk hook failed", e) }
     }
 
@@ -225,15 +218,8 @@ class VirtualLauncher(private val context: Context) {
                 val baseContext = activity.baseContext
                 val spoofedContext = object : ContextWrapper(baseContext) {
                     override fun getPackageName(): String = "com.chucklefish.stardewvalley"
-                    
-                    // Redirect SD Card / Hardcoded paths
                     override fun getExternalFilesDir(type: String?): File? = File("/sdcard/PotataSMAPI/Files")
                     override fun getFilesDir(): File = File("/sdcard/PotataSMAPI/Internal")
-                    
-                    override fun getSystemService(name: String): Any? {
-                        // Potential hook for storage manager if needed
-                        return super.getSystemService(name)
-                    }
                 }
                 val mBaseField = ContextWrapper::class.java.getDeclaredField("mBase")
                 mBaseField.isAccessible = true
