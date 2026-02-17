@@ -8,8 +8,8 @@ import java.io.FileOutputStream
 import java.util.zip.ZipFile
 
 /**
- * The VirtualExtractor (Stable Patcher).
- * Combines Mono redirection with length-safe binary patching for isolated saves.
+ * The VirtualExtractor (Final Fix Edition).
+ * Extracts both assemblies and game content to ensure MonoGame has all its assets.
  */
 class PatcherService(private val context: Context) {
     private val TAG = "PotataVirtual"
@@ -19,7 +19,7 @@ class PatcherService(private val context: Context) {
     }
 
     fun importGame(originalApkPaths: List<String>) {
-        log("Initializing Stable Patcher Workspace...")
+        log("Surgical Import Starting...")
 
         val virtualRoot = File(context.filesDir, "virtual/stardew")
         if (virtualRoot.exists()) virtualRoot.deleteRecursively()
@@ -27,6 +27,7 @@ class PatcherService(private val context: Context) {
 
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
         val assetsDir = File(virtualRoot, "assets").apply { mkdirs() }
+        val assemblyDir = File(assetsDir, "assemblies").apply { mkdirs() }
         
         originalApkPaths.forEachIndexed { index, path ->
             val sourceFile = if (path.startsWith("content://")) {
@@ -40,99 +41,63 @@ class PatcherService(private val context: Context) {
             val targetName = if (index == 0) "base.apk" else "split_$index.apk"
             val virtualApk = File(virtualRoot, targetName)
 
-            // CRITICAL: Copy APK UNTOUCHED to keep signature valid (No more black screen)
-            log("Mounting Segment: ${sourceFile.name}")
+            log("Cloning: ${sourceFile.name}")
             sourceFile.copyTo(virtualApk, overwrite = true)
             
-            // Extract and Patch redirection targets
-            extractAndPatchRedirectionTargets(virtualApk, libDir, assetsDir)
+            // Extract code and content
+            extractAssets(virtualApk, libDir, assetsDir, assemblyDir)
             
             virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
         }
 
-        // 3. Inject SMAPI into the extracted filesystem
-        log("Injecting SMAPI into redirection path...")
-        val assemblyDir = File(assetsDir, "assemblies").apply { mkdirs() }
-        
-        // Replace Stardew Valley.dll with SMAPI (Our version is already length-safe)
+        // Inject SMAPI
+        log("Bridging Modded Engine...")
         context.assets.open("StardewModdingAPI.dll").use { input ->
+            // In Mono-Redirect, SMAPI must be 'Stardew Valley.dll' to override the internal code
             File(assemblyDir, "Stardew Valley.dll").outputStream().use { output ->
                 input.copyTo(output)
             }
         }
         
-        log("Import Successful! Signature valid + Paths patched.")
+        log("Import Complete. System Ready.")
         File(virtualRoot, "virtual.ready").createNewFile()
     }
 
-    private fun extractAndPatchRedirectionTargets(apk: File, libDir: File, assetsDir: File) {
+    private fun extractAssets(apk: File, libDir: File, assetsDir: File, assemblyDir: File) {
         val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
         ZipFile(apk).use { zip ->
             zip.entries().asSequence().forEach { entry ->
-                // 1. Extract and Patch DLLs (Assemblies)
-                if (entry.name.contains("assemblies/") && entry.name.endsWith(".dll")) {
-                    val target = File(assetsDir, entry.name.removePrefix("assets/"))
+                val name = entry.name
+                
+                // 1. Extract DLLs (Assemblies)
+                if (name.contains("assemblies/") && name.endsWith(".dll")) {
+                    val target = File(assetsDir, name.removePrefix("assets/"))
                     target.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { it.copyTo(target.outputStream()) }
                     
-                    zip.getInputStream(entry).use { input ->
-                        val bytes = input.readBytes()
-                        // Patch hardcoded paths in the DLL bytes
-                        val patchedBytes = patchBinaryPaths(bytes)
-                        target.writeBytes(patchedBytes)
-                    }
-                    
-                    // If it's the vanilla DLL, rename it so SMAPI can load it
-                    if (entry.name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
+                    if (name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
                         val vanilla = File(target.parentFile, "StardewValley.Vanilla.dll")
                         target.renameTo(vanilla)
                     }
                 }
                 
-                // 2. Extract and Patch Native Libs
-                if (entry.name.startsWith("lib/$preferredAbi/") && entry.name.endsWith(".so")) {
-                    val target = File(libDir, File(entry.name).name)
+                // 2. Extract Game Content (Essential for textures/audio)
+                if (name.startsWith("assets/Content/")) {
+                    val target = File(virtualRoot, name)
+                    target.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { it.copyTo(target.outputStream()) }
+                }
+                
+                // 3. Extract Native Libs
+                if (name.startsWith("lib/$preferredAbi/") && name.endsWith(".so")) {
+                    val target = File(libDir, File(name).name)
                     if (!target.exists()) {
-                        zip.getInputStream(entry).use { input ->
-                            val bytes = input.readBytes()
-                            val patchedBytes = patchBinaryPaths(bytes)
-                            target.writeBytes(patchedBytes)
-                        }
+                        zip.getInputStream(entry).use { it.copyTo(target.outputStream()) }
                     }
                 }
             }
         }
-    }
-
-    /**
-     * Replaces hardcoded 'StardewValley' strings with 'PotataSMAPI' in binary data.
-     * CRITICAL: Preserves length (13 bytes) using null padding to avoid corruption.
-     */
-    private fun patchBinaryPaths(data: ByteArray): ByteArray {
-        val search = "StardewValley".toByteArray()
-        // 'PotataSMAPI' (11) + 2 null bytes = 13 bytes. File structure remains perfect.
-        val replace = "PotataSMAPI\u0000\u0000".toByteArray()
-        val patched = data.copyOf()
-        
-        var i = 0
-        while (i <= patched.size - search.size) {
-            var match = true
-            for (j in search.indices) {
-                if (patched[i + j] != search[j]) {
-                    match = false
-                    break
-                }
-            }
-            if (match) {
-                for (j in replace.indices) {
-                    patched[i + j] = replace[j]
-                }
-                i += search.size
-            } else {
-                i++
-            }
-        }
-        return patched
     }
 
     private fun copyUriToFile(uri: android.net.Uri, outFile: File) {
