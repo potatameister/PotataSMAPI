@@ -69,11 +69,11 @@ class PotataApp : Application() {
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) return
         try {
             val forName = Class::class.java.getDeclaredMethod("forName", String::class.java)
-            val getDeclaredMethod = Class::class.java.getDeclaredMethod("getDeclaredMethod", String::class.java, Array<Class<*>>::class.java)
+            val getDeclaredMethod = Class::class.java.getDeclaredMethod("getDeclaredMethod", String::class.java, arrayOf<Class<*>>().javaClass)
 
             val vmRuntimeClass = forName.invoke(null, "dalvik.system.VMRuntime") as Class<*>
             val getRuntime = getDeclaredMethod.invoke(vmRuntimeClass, "getRuntime", null) as java.lang.reflect.Method
-            val setHiddenApiExemptions = getDeclaredMethod.invoke(vmRuntimeClass, "setHiddenApiExemptions", arrayOf(Array<String>::class.java)) as java.lang.reflect.Method
+            val setHiddenApiExemptions = getDeclaredMethod.invoke(vmRuntimeClass, "setHiddenApiExemptions", arrayOf(arrayOf<String>().javaClass)) as java.lang.reflect.Method
 
             val vmRuntime = getRuntime.invoke(null)
             setHiddenApiExemptions.invoke(vmRuntime, arrayOf("L"))
