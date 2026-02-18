@@ -58,6 +58,17 @@ class VirtualLauncher(private val context: Context) {
                 android.system.Os.setenv("HOME", baseDir, true)
                 android.system.Os.setenv("EXTERNAL_STORAGE", baseDir, true)
                 android.system.Os.setenv("LD_LIBRARY_PATH", nativeLibPath, true)
+                
+                // Pre-load in order to fix "library not found" for monodroid
+                try {
+                    System.load(File(libDir, "libxamarin-app.so").absolutePath)
+                    System.load(File(libDir, "libmonosgen-2.0.so").absolutePath)
+                    System.load(File(libDir, "libmonodroid.so").absolutePath)
+                    PotataApp.addLog("Native Engines: PRE-LOADED")
+                } catch (e: Throwable) {
+                    PotataApp.addLog("Pre-load Warning: ${e.message}")
+                }
+                
                 PotataApp.addLog("Env Hijack: $baseDir")
             } catch (e: Exception) { PotataApp.addLog("Env Error: ${e.message}") }
 
@@ -71,7 +82,8 @@ class VirtualLauncher(private val context: Context) {
             val targetActivity = detectEntryPoint(classLoader, activityName)
             (context as Activity).runOnUiThread {
                 try {
-                    val intent = Intent(context, ProxyActivity::class.java).apply {
+                    val intent = Intent().apply {
+                        setClassName(context.packageName, ProxyActivity::class.java.name)
                         putExtra("TARGET_ACTIVITY", targetActivity)
                         putExtra("DEX_PATH", dexPath)
                         putExtra("LIB_PATH", nativeLibPath)
