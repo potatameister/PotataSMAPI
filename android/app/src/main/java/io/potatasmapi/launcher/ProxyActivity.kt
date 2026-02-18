@@ -1,7 +1,9 @@
 package io.potatasmapi.launcher
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.res.AssetManager
 import android.os.Bundle
 import android.util.Log
@@ -18,34 +20,66 @@ class ProxyActivity : Activity() {
         super.onCreate(savedInstanceState)
         
         try {
-            PotataApp.addLog("Proxy: Redirecting Context...")
+            val targetActivityName = intent.getStringExtra("TARGET_ACTIVITY") ?: return
+            val dexPath = intent.getStringExtra("DEX_PATH") ?: return
+            val libPath = intent.getStringExtra("LIB_PATH") ?: return
+
+            PotataApp.addLog("Proxy: Initializing Engine...")
             
-            // 1. Get the Virtual Path
-            val virtualRoot = File(filesDir, "virtual/stardew")
-            val baseApk = File(virtualRoot, "base.apk")
+            // 1. Setup Virtual ClassLoader for this instance
+            val classLoader = dalvik.system.DexClassLoader(
+                dexPath, 
+                File(codeCacheDir, "opt_dex").absolutePath, 
+                libPath, 
+                this.javaClass.classLoader
+            )
 
-            // 2. Add the Game's APK to our AssetManager
-            // This allows the game to see its original resources
-            val addAssetPathMethod = AssetManager::class.java.getDeclaredMethod("addAssetPath", String::class.java)
-            addAssetPathMethod.isAccessible = true
-            addAssetPathMethod.invoke(assets, baseApk.absolutePath)
-
-            PotataApp.addLog("Proxy: Assets Mounted.")
-
-            // 3. (Future) Load SMAPI Native Here
+            // 2. Hijack the Context for the coming Activity
+            // This is critical for Android 15/16 redirection
+            val targetClass = classLoader.loadClass(targetActivityName)
             
-            // 4. Placeholder for UI
-            setContentView(android.R.layout.simple_list_item_1)
-            PotataApp.addLog("Proxy: Virtual Engine Running.")
+            PotataApp.addLog("Proxy: Target Class Loaded.")
+
+            // 3. Launch the actual game activity from the virtual loader
+            val intent = Intent(this, targetClass).apply {
+                putExtras(this@ProxyActivity.intent)
+                addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT)
+            }
+            
+            // 4. Final Hook: Force the system to use our ClassLoader for the next activity
+            overrideClassLoader(classLoader)
+            
+            startActivity(intent)
+            finish()
+            PotataApp.addLog("Proxy: Handover Complete.")
 
         } catch (e: Exception) {
             Log.e(TAG, "Proxy Failed", e)
             PotataApp.addLog("Proxy Error: ${e.message}")
+            finish()
         }
     }
-    
-    override fun getClassLoader(): ClassLoader {
-        // Force the use of our Virtual ClassLoader for this Activity
-        return super.getClassLoader()
+
+    @SuppressLint("DiscouragedPrivateApi")
+    private fun overrideClassLoader(cl: ClassLoader) {
+        try {
+            val mPackagesField = activityThread().javaClass.getDeclaredField("mPackages")
+            mPackagesField.isAccessible = true
+            val mPackages = mPackagesField.get(activityThread()) as MutableMap<String, *>
+            val loadedApkWeakRef = mPackages[packageName] as java.lang.ref.WeakReference<*>
+            val loadedApk = loadedApkWeakRef.get() ?: return
+            
+            val mClassLoaderField = loadedApk.javaClass.getDeclaredField("mClassLoader")
+            mClassLoaderField.isAccessible = true
+            mClassLoaderField.set(loadedApk, cl)
+        } catch (e: Exception) {
+            Log.e(TAG, "ClassLoader Override Fail", e)
+        }
+    }
+
+    private fun activityThread(): Any {
+        return Class.forName("android.app.ActivityThread")
+            .getDeclaredMethod("currentActivityThread")
+            .invoke(null)
     }
 }

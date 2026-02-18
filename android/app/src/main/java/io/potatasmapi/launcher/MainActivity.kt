@@ -17,6 +17,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -404,10 +406,39 @@ class MainActivity : ComponentActivity() {
             // Stats Bento Grid
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 val logFile = File("/sdcard/PotataSMAPI/ErrorLogs/SMAPI-latest.txt")
-                val isSmapiActive = remember { mutableStateOf(logFile.exists()) }
+                var showSmapiLog by remember { mutableStateOf(false) }
                 
                 StatCard("MODS LOADED", modList.size.toString(), Icons.Default.List, Modifier.weight(1f))
-                StatCard("SMAPI STATUS", if (isSmapiActive.value) "ACTIVE" else "INACTIVE", Icons.Default.Build, Modifier.weight(1f))
+                
+                Card(
+                    modifier = Modifier.weight(1f).height(100.dp).clickable { if (logFile.exists()) showSmapiLog = true },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = StardewSurface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("SMAPI LOG", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(if (logFile.exists()) "VIEW LOG" else "NO LOG", color = if (logFile.exists()) StardewGold else Color.Gray, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+
+                if (showSmapiLog) {
+                    AlertDialog(
+                        onDismissRequest = { showSmapiLog = false },
+                        title = { Text("SMAPI Latest Log") },
+                        text = {
+                            val logs = remember { logFile.readLines().takeLast(200).joinToString("\n") }
+                            Box(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                                Text(logs, fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                        },
+                        confirmButton = { TextButton(onClick = { showSmapiLog = false }) { Text("CLOSE") } }
+                    )
+                }
             }
             
             Spacer(modifier = Modifier.height(24.dp))
@@ -514,7 +545,7 @@ class MainActivity : ComponentActivity() {
                         maxLines = 1
                     )
                     Text(
-                        "by ${mod.author}", 
+                        "by ${mod.author} • v${mod.version}", 
                         color = Color.Gray.copy(contentAlpha), 
                         fontSize = 12.sp
                     )

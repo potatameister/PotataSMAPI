@@ -38,6 +38,7 @@ class PotataApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        bypassHiddenApi()
         System.setProperty("user.home", filesDir.absolutePath)
         
         // Initialize persistent log
@@ -62,6 +63,24 @@ class PotataApp : Application() {
         })
 
         addLog("Launcher core initialized.")
+    }
+
+    private fun bypassHiddenApi() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) return
+        try {
+            val forName = Class::class.java.getDeclaredMethod("forName", String::class.java)
+            val getDeclaredMethod = Class::class.java.getDeclaredMethod("getDeclaredMethod", String::class.java, Array<Class<*>>::class.java)
+
+            val vmRuntimeClass = forName.invoke(null, "dalvik.system.VMRuntime") as Class<*>
+            val getRuntime = getDeclaredMethod.invoke(vmRuntimeClass, "getRuntime", null) as java.lang.reflect.Method
+            val setHiddenApiExemptions = getDeclaredMethod.invoke(vmRuntimeClass, "setHiddenApiExemptions", arrayOf(Array<String>::class.java)) as java.lang.reflect.Method
+
+            val vmRuntime = getRuntime.invoke(null)
+            setHiddenApiExemptions.invoke(vmRuntime, arrayOf("L"))
+            Log.d("Potata", "Hidden API Bypass: SUCCESS")
+        } catch (e: Exception) {
+            Log.e("Potata", "Hidden API Bypass: FAILED", e)
+        }
     }
 
     private fun mountAssets(activity: Activity) {

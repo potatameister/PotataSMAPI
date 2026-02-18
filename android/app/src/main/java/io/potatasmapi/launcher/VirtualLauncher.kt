@@ -40,9 +40,10 @@ class VirtualLauncher(private val context: Context) {
             val nativeLibPath = libDir.absolutePath
 
             // 1. Check Redirection Path
-            val smapiDll = File(sdcardRoot, "assemblies/Stardew Valley.dll")
+            val assembliesDir = File(sdcardRoot, "assemblies")
+            val smapiDll = File(assembliesDir, "PotataModdingAPI.dll")
             if (!smapiDll.exists()) {
-                throw Exception("SMAPI DLL missing from SD Card!")
+                throw Exception("SMAPI Core (PotataModdingAPI.dll) missing from SD Card!")
             }
 
             // 2. Create ClassLoader
@@ -51,12 +52,13 @@ class VirtualLauncher(private val context: Context) {
 
             // 3. Setup Redirection
             try {
-                android.system.Os.setenv("MONO_PATH", sdcardRoot.absolutePath, true)
-                android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", sdcardRoot.absolutePath, true)
-                android.system.Os.setenv("HOME", sdcardRoot.absolutePath, true)
-                android.system.Os.setenv("EXTERNAL_STORAGE", sdcardRoot.absolutePath, true)
+                val baseDir = sdcardRoot.absolutePath
+                android.system.Os.setenv("MONO_PATH", assembliesDir.absolutePath, true)
+                android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", baseDir, true)
+                android.system.Os.setenv("HOME", baseDir, true)
+                android.system.Os.setenv("EXTERNAL_STORAGE", baseDir, true)
                 android.system.Os.setenv("LD_LIBRARY_PATH", nativeLibPath, true)
-                PotataApp.addLog("Environment Variables: OK")
+                PotataApp.addLog("Env Hijack: $baseDir")
             } catch (e: Exception) { PotataApp.addLog("Env Error: ${e.message}") }
 
             // 4. System Hooks
@@ -69,14 +71,16 @@ class VirtualLauncher(private val context: Context) {
             val targetActivity = detectEntryPoint(classLoader, activityName)
             (context as Activity).runOnUiThread {
                 try {
-                    val intent = Intent().apply {
-                        setClassName(context.packageName, targetActivity)
+                    val intent = Intent(context, ProxyActivity::class.java).apply {
+                        putExtra("TARGET_ACTIVITY", targetActivity)
+                        putExtra("DEX_PATH", dexPath)
+                        putExtra("LIB_PATH", nativeLibPath)
                         putExtra("VIRTUAL_MODE", true)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
                     onComplete()
-                    PotataApp.addLog("Launch Intent Fired.")
+                    PotataApp.addLog("Proxy Launch Fired: $targetActivity")
                 } catch (e: Exception) {
                     PotataApp.addLog("Launch Crash: ${e.message}")
                     onComplete()
@@ -186,35 +190,54 @@ class VirtualLauncher(private val context: Context) {
             return base.newActivity(classLoader, className, intent)
         }
 
-        override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
+        private fun spoofContext(activity: Activity) {
             if (activity.javaClass.name.contains("chucklefish")) {
                 try {
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                    val spoofedContext = object : ContextWrapper(activity.baseContext) {
-                        override fun getPackageName(): String = "com.chucklefish.stardewvalley"
-                        override fun getExternalFilesDir(type: String?): File? = File(Environment.getExternalStorageDirectory(), "PotataSMAPI/Files")
-                        override fun getFilesDir(): File = File(Environment.getExternalStorageDirectory(), "PotataSMAPI/Internal")
-                        override fun getAssets(): AssetManager = activity.assets
-                        override fun getApplicationInfo(): ApplicationInfo {
-                            val info = super.getApplicationInfo()
-                            info.packageName = "com.chucklefish.stardewvalley"
-                            info.sourceDir = baseApk
-                            info.publicSourceDir = baseApk
-                            info.nativeLibraryDir = libDir
-                            return info
-                        }
-                    }
                     val mBaseField = ContextWrapper::class.java.getDeclaredField("mBase")
                     mBaseField.isAccessible = true
-                    mBaseField.set(activity, spoofedContext)
-                    PotataApp.addLog("Activity Identity: SPOOFED")
-                } catch (e: Exception) { PotataApp.addLog("Activity Spoof FAIL") }
+                    val currentBase = mBaseField.get(activity) as Context
+                    if (currentBase !is PotataContext) {
+                        mBaseField.set(activity, PotataContext(currentBase, baseApk, libDir))
+                        PotataApp.addLog("Activity Identity: SPOOFED")
+                    }
+                } catch (e: Exception) { PotataApp.addLog("Activity Spoof FAIL: ${e.message}") }
+            }
+        }
+
+        override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
+            spoofContext(activity)
+            if (activity.javaClass.name.contains("chucklefish")) {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             }
             base.callActivityOnCreate(activity, icicle)
+        }
+
+        override fun callActivityOnResume(activity: Activity) {
+            spoofContext(activity)
+            base.callActivityOnResume(activity)
+        }
+
+        override fun callActivityOnStart(activity: Activity) {
+            spoofContext(activity)
+            base.callActivityOnStart(activity)
         }
 
         override fun onCreate(arguments: Bundle?) { base.onCreate(arguments) }
         override fun onStart() { base.onStart() }
         override fun onDestroy() { base.onDestroy() }
+    }
+
+    private class PotataContext(base: Context, private val baseApk: String, private val libDir: String) : ContextWrapper(base) {
+        override fun getPackageName(): String = "com.chucklefish.stardewvalley"
+        override fun getExternalFilesDir(type: String?): File? = File(Environment.getExternalStorageDirectory(), "PotataSMAPI/Files")
+        override fun getFilesDir(): File = File(Environment.getExternalStorageDirectory(), "PotataSMAPI/Internal")
+        override fun getApplicationInfo(): ApplicationInfo {
+            val info = super.getApplicationInfo()
+            info.packageName = "com.chucklefish.stardewvalley"
+            info.sourceDir = baseApk
+            info.publicSourceDir = baseApk
+            info.nativeLibraryDir = libDir
+            return info
+        }
     }
 }

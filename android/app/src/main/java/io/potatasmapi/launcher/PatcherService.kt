@@ -62,7 +62,7 @@ class PatcherService(private val context: Context) {
         // 3. Inject SMAPI
         log("Injecting SMAPI core...")
         context.assets.open("StardewModdingAPI.dll").use { input ->
-            val target = File(assemblyDir, "Stardew Valley.dll")
+            val target = File(assemblyDir, "PotataModdingAPI.dll")
             target.outputStream().use { input.copyTo(it) }
         }
         
@@ -79,8 +79,8 @@ class PatcherService(private val context: Context) {
             zip.entries().asSequence().forEach { entry ->
                 val name = entry.name
                 
-                // 1. Assemblies
-                if (name.contains("assemblies/") && name.endsWith(".dll")) {
+                // 1. Assemblies & Configs
+                if (name.contains("assemblies/") && (name.endsWith(".dll") || name.endsWith(".json") || name.endsWith(".config"))) {
                     val target = File(assemblyDir, name.substringAfterLast("/"))
                     zip.getInputStream(entry).use { input ->
                         val bytes = input.readBytes()
@@ -93,21 +93,15 @@ class PatcherService(private val context: Context) {
                     }
                 }
                 
-                // 2. Content (XML/JSON needs patching for path strings)
+                // 2. Content (SKIP EXTRACTION unless specific files are needed)
+                // Note: assets/Content is mounted via addAssetPath in PotataApp.mountAssets
+                // We only extract if we need to patch specific path-heavy XMLs or if we want to support overrides easily.
+                // For now, let's keep it minimal as per the efficiency plan.
+                /*
                 if (name.startsWith("assets/Content/")) {
-                    val target = File(assetsDir, name.removePrefix("assets/"))
-                    target.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { input ->
-                        if (name.endsWith(".xml") || name.endsWith(".json") || name.endsWith(".txt")) {
-                            val bytes = input.readBytes()
-                            val patched = patchBinaryPaths(bytes)
-                            if (patched !== bytes) count++
-                            target.writeBytes(patched)
-                        } else {
-                            target.outputStream().use { input.copyTo(it) }
-                        }
-                    }
+                    // Selective extraction logic could go here
                 }
+                */
                 
                 // 3. Native Libs
                 if (name.startsWith("lib/$preferredAbi/") && name.endsWith(".so")) {
@@ -127,36 +121,41 @@ class PatcherService(private val context: Context) {
     }
 
     private fun patchBinaryPaths(data: ByteArray): ByteArray {
-        // Multi-string search
-        val targets = listOf("StardewValley", "Stardew Valley")
-        val replacement = "PotataSMAPI"
+        val targets = listOf("StardewValley", "Stardew Valley", "Stardew Valley.dll")
+        val replacements = mapOf(
+            "StardewValley" to "PotataSMAPI",
+            "Stardew Valley" to "PotataSMAPI ",
+            "Stardew Valley.dll" to "PotataModdingAPI.dll"
+        )
         var currentData = data
         var changed = false
 
         for (target in targets) {
             val searchBytes = target.toByteArray()
-            // Pad replacement to match target length exactly
-            val replaceBytes = replacement.padEnd(target.length, '\u0000').toByteArray()
+            val replacement = replacements[target] ?: continue
+            val replaceBytes = replacement.toByteArray()
             
             var i = 0
             while (i <= currentData.size - searchBytes.size) {
-                var match = true
-                for (j in searchBytes.indices) {
-                    if (currentData[i + j] != searchBytes[j]) {
-                        match = false
-                        break
+                if (currentData[i] == searchBytes[0]) {
+                    var match = true
+                    for (j in 1 until searchBytes.size) {
+                        if (currentData[i + j] != searchBytes[j]) {
+                            match = false
+                            break
+                        }
+                    }
+                    if (match) {
+                        if (!changed) {
+                            currentData = currentData.copyOf()
+                            changed = true
+                        }
+                        System.arraycopy(replaceBytes, 0, currentData, i, replaceBytes.size)
+                        i += searchBytes.size
+                        continue
                     }
                 }
-                if (match) {
-                    if (!changed) {
-                        currentData = currentData.copyOf()
-                        changed = true
-                    }
-                    for (j in replaceBytes.indices) {
-                        currentData[i + j] = replaceBytes[j]
-                    }
-                    i += searchBytes.size
-                } else i++
+                i++
             }
         }
         return currentData

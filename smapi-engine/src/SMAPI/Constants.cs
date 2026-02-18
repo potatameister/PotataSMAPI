@@ -15,11 +15,13 @@ namespace StardewModdingAPI;
 
 internal static class EarlyConstants
 {
-    public static string? AndroidBaseDirPath { get; set; } = "/sdcard/PotataSMAPI";
+    private static string GetBaseDir() => Environment.GetEnvironmentVariable("SMAPI_ANDROID_BASE_DIR") ?? "/sdcard/PotataSMAPI";
 
-    public static string GamePath { get; } = "/sdcard/PotataSMAPI";
+    public static string? AndroidBaseDirPath { get; set; } = GetBaseDir();
 
-    public static string InternalFilesPath => "/sdcard/PotataSMAPI/smapi-internal";
+    public static string GamePath { get; } = GetBaseDir();
+
+    public static string InternalFilesPath => Path.Combine(GetBaseDir(), "smapi-internal");
 
     internal static GamePlatform Platform { get; } = GamePlatform.Android;
 
@@ -34,24 +36,26 @@ internal static class EarlyConstants
 
 public static class Constants
 {
+    private static string GetBaseDir() => EarlyConstants.AndroidBaseDirPath ?? "/sdcard/PotataSMAPI";
+
     public static ISemanticVersion ApiVersion { get; } = new Toolkit.SemanticVersion(EarlyConstants.RawApiVersion);
     public static ISemanticVersion MinimumGameVersion { get; } = new GameVersion("1.6.14");
     public static int? MinimumGameBuild { get; } = null;
     public static ISemanticVersion? MaximumGameVersion { get; } = null;
     public static GamePlatform TargetPlatform { get; } = GamePlatform.Android;
     public static GameFramework GameFramework { get; } = GameFramework.MonoGame;
-    public static string GamePath { get; } = "/sdcard/PotataSMAPI";
-    public static string ContentPath { get; } = "/sdcard/PotataSMAPI/Content";
-    public static string? AndroidBaseDirPath { get => "/sdcard/PotataSMAPI"; set { } }
-    public static string DataPath { get; } = "/sdcard/PotataSMAPI";
-    public static string LogDir { get; } = "/sdcard/PotataSMAPI/ErrorLogs";
-    public static string SavesPath { get; } = "/sdcard/PotataSMAPI/Saves";
+    public static string GamePath { get; } = GetBaseDir();
+    public static string ContentPath { get; } = Path.Combine(GetBaseDir(), "Content");
+    public static string? AndroidBaseDirPath { get => GetBaseDir(); set { } }
+    public static string DataPath { get; } = GetBaseDir();
+    public static string LogDir { get; } = Path.Combine(GetBaseDir(), "ErrorLogs");
+    public static string SavesPath { get; } = Path.Combine(GetBaseDir(), "Saves");
     public static string? SaveFolderName => null;
     public static string? CurrentSavePath => null;
 
     internal const bool IsDebugBuild = false;
     internal const string HomePageUrl = "https://smapi.io";
-    internal static string InternalFilesPath => "/sdcard/PotataSMAPI/smapi-internal";
+    internal static string InternalFilesPath => Path.Combine(GetBaseDir(), "smapi-internal");
     internal static string ApiConfigPath => Path.Combine(Constants.InternalFilesPath, "config.json");
     internal static string ApiUserConfigPath => Path.Combine(Constants.InternalFilesPath, "config.user.json");
     internal static string ApiModGroupConfigPath => Path.Combine(Constants.ModsPath, "SMAPI-config.json");
@@ -65,15 +69,15 @@ public static class Constants
     internal static string FatalCrashLog => Path.Combine(Constants.LogDir, "SMAPI-crash.txt");
     internal static string FatalCrashMarker => Path.Combine(Constants.InternalFilesPath, "StardewModdingAPI.crash.marker");
     internal static string UpdateMarker => Path.Combine(Constants.InternalFilesPath, "StardewModdingAPI.update.marker");
-    internal static string DefaultModsPath { get; } = "/sdcard/PotataSMAPI/Mods";
-    internal static string ModsPath { get; set; } = "/sdcard/PotataSMAPI/Mods";
+    internal static string DefaultModsPath { get; } = Path.Combine(GetBaseDir(), "Mods");
+    internal static string ModsPath { get; set; } = Path.Combine(GetBaseDir(), "Mods");
     internal static ISemanticVersion GameVersion { get; } = new GameVersion("1.6.14");
     internal static Platform Platform { get; } = Platform.Android;
 
     internal static ISemanticVersion? GetCompatibleApiVersion(ISemanticVersion version) => null;
     internal static void ConfigureAssemblyResolver(AssemblyDefinitionResolver resolver) {}
     internal static PlatformAssemblyMap GetAssemblyMap(Platform targetPlatform) => null!;
-    private static string GetContentFolderPath() => "/sdcard/PotataSMAPI/Content";
+    private static string GetContentFolderPath() => Path.Combine(GetBaseDir(), "Content");
     private static string? GetSaveFolderName() => null;
     private static string? GetSaveFolderPathIfExists() => null;
     private static DirectoryInfo? GetSaveFolder() => null;
