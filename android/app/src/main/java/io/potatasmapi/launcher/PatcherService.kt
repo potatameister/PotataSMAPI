@@ -62,7 +62,7 @@ class PatcherService(private val context: Context) {
         // 3. Inject SMAPI
         log("Injecting SMAPI core...")
         context.assets.open("StardewModdingAPI.dll").use { input ->
-            val target = File(assemblyDir, "PotataModdingAPI.dll")
+            val target = File(assemblyDir, "Stardew Valley.dll")
             target.outputStream().use { input.copyTo(it) }
         }
         
@@ -84,9 +84,9 @@ class PatcherService(private val context: Context) {
                     val target = File(assemblyDir, name.substringAfterLast("/"))
                     zip.getInputStream(entry).use { input ->
                         val bytes = input.readBytes()
-                        val patched = patchBinaryPaths(bytes)
-                        if (patched !== bytes) count++
-                        target.writeBytes(patched)
+                        // val patched = patchBinaryPaths(bytes) // Disabled to prevent corruption
+                        // if (patched !== bytes) count++
+                        target.writeBytes(bytes)
                     }
                     if (name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
                         target.renameTo(File(assemblyDir, "StardewValley.Vanilla.dll"))
@@ -109,9 +109,9 @@ class PatcherService(private val context: Context) {
                     if (!target.exists()) {
                         zip.getInputStream(entry).use { input ->
                             val bytes = input.readBytes()
-                            val patched = patchBinaryPaths(bytes)
-                            if (patched !== bytes) count++
-                            target.writeBytes(patched)
+                            // val patched = patchBinaryPaths(bytes) // Disabled to prevent corruption
+                            // if (patched !== bytes) count++
+                            target.writeBytes(bytes)
                         }
                     }
                 }
@@ -121,44 +121,8 @@ class PatcherService(private val context: Context) {
     }
 
     private fun patchBinaryPaths(data: ByteArray): ByteArray {
-        val targets = listOf("StardewValley", "Stardew Valley", "Stardew Valley.dll")
-        val replacements = mapOf(
-            "StardewValley" to "PotataSMAPI",
-            "Stardew Valley" to "PotataSMAPI ",
-            "Stardew Valley.dll" to "PotataModdingAPI.dll"
-        )
-        var currentData = data
-        var changed = false
-
-        for (target in targets) {
-            val searchBytes = target.toByteArray()
-            val replacement = replacements[target] ?: continue
-            val replaceBytes = replacement.toByteArray()
-            
-            var i = 0
-            while (i <= currentData.size - searchBytes.size) {
-                if (currentData[i] == searchBytes[0]) {
-                    var match = true
-                    for (j in 1 until searchBytes.size) {
-                        if (currentData[i + j] != searchBytes[j]) {
-                            match = false
-                            break
-                        }
-                    }
-                    if (match) {
-                        if (!changed) {
-                            currentData = currentData.copyOf()
-                            changed = true
-                        }
-                        System.arraycopy(replaceBytes, 0, currentData, i, replaceBytes.size)
-                        i += searchBytes.size
-                        continue
-                    }
-                }
-                i++
-            }
-        }
-        return currentData
+        // ... (Disabled) ...
+        return data
     }
 
     private fun copyUriToFile(uri: android.net.Uri, outFile: File) {

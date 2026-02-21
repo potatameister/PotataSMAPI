@@ -41,9 +41,9 @@ class VirtualLauncher(private val context: Context) {
 
             // 1. Check Redirection Path
             val assembliesDir = File(sdcardRoot, "assemblies")
-            val smapiDll = File(assembliesDir, "PotataModdingAPI.dll")
+            val smapiDll = File(assembliesDir, "Stardew Valley.dll")
             if (!smapiDll.exists()) {
-                throw Exception("SMAPI Core (PotataModdingAPI.dll) missing from SD Card!")
+                throw Exception("SMAPI Core (Stardew Valley.dll) missing from SD Card!")
             }
 
             // 2. Create ClassLoader
