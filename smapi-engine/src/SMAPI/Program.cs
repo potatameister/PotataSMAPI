@@ -32,6 +32,8 @@ internal class Program
     /// <param name="args">The command-line arguments.</param>
     public static void Main(string[] args)
     {
+        try { File.AppendAllText("/sdcard/PotataSMAPI/bridge_log.txt", $"[{DateTime.Now:HH:mm:ss}] SMAPI Main started.\n"); } catch {}
+
         Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture; // per StardewValley.Program.Main
         if (EarlyConstants.Platform != GamePlatform.Android)
             Console.Title = $"SMAPI {EarlyConstants.RawApiVersion}";
@@ -44,12 +46,18 @@ internal class Program
                 string vanillaPath = Path.Combine(EarlyConstants.GamePath, "assemblies", "StardewValley.Vanilla.dll");
                 if (File.Exists(vanillaPath))
                 {
+                    try { File.AppendAllText("/sdcard/PotataSMAPI/bridge_log.txt", $"[{DateTime.Now:HH:mm:ss}] Loading Vanilla DLL: {vanillaPath}\n"); } catch {}
                     Assembly.LoadFrom(vanillaPath);
                     Console.WriteLine("[SMAPI] Pre-loaded StardewValley.Vanilla.dll");
+                }
+                else
+                {
+                    try { File.AppendAllText("/sdcard/PotataSMAPI/bridge_log.txt", $"[{DateTime.Now:HH:mm:ss}] Vanilla DLL NOT FOUND at {vanillaPath}\n"); } catch {}
                 }
             }
             catch (Exception ex)
             {
+                try { File.AppendAllText("/sdcard/PotataSMAPI/bridge_log.txt", $"[{DateTime.Now:HH:mm:ss}] Failed to load Vanilla DLL: {ex}\n"); } catch {}
                 Console.WriteLine($"[SMAPI] Failed to pre-load vanilla game: {ex}");
             }
         }
@@ -61,6 +69,7 @@ internal class Program
             Program.AssertGameVersion();
             Program.AssertSmapiVersions();
             Program.AssertDepsJson();
+            try { File.AppendAllText("/sdcard/PotataSMAPI/bridge_log.txt", $"[{DateTime.Now:HH:mm:ss}] Starting Game Runner...\n"); } catch {}
             Program.Start(args);
         }
         catch (BadImageFormatException ex) when (ex.FileName == EarlyConstants.GameAssemblyName)
