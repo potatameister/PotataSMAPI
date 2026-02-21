@@ -27,7 +27,7 @@ internal static class EarlyConstants
 
     internal static GameFramework GameFramework { get; } = GameFramework.MonoGame;
 
-    internal static string GameAssemblyName { get; } = "Stardew Valley";
+    internal static string GameAssemblyName { get; } = "StardewValley.Vanilla";
 
     internal static int? LogScreenId { get; set; }
 
