@@ -81,6 +81,9 @@ jobs:
                 run: |
                     git clone --depth 1 https://github.com/ZaneYork/StardewValley-Android-References.git "$HOME/StardewValley"
 
+            -   name: Install Android Workload
+                run: dotnet workload install android
+
             -   name: Build SMAPI
                 shell: pwsh
                 run: |
