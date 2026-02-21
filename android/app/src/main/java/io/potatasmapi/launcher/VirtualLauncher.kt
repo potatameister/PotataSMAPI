@@ -133,7 +133,7 @@ class VirtualLauncher(private val context: Context) {
                 infoField.isAccessible = true
                 val appInfo = infoField.get(mBoundApplication) as ApplicationInfo
                 
-                appInfo.packageName = "com.chucklefish.stardewvalley"
+                // appInfo.packageName = "com.chucklefish.stardewvalley" // REMOVED: Delayed until game launch
                 appInfo.dataDir = dataDir
                 appInfo.sourceDir = baseApk
                 appInfo.publicSourceDir = baseApk
@@ -161,7 +161,7 @@ class VirtualLauncher(private val context: Context) {
                         "mAppDir", "mDir", "mResDir" -> field.set(loadedApk, baseApk)
                         "mDataDir" -> field.set(loadedApk, dataDir)
                         "mLibDir", "mLibPath" -> field.set(loadedApk, libDir)
-                        "mPackageName" -> field.set(loadedApk, "com.chucklefish.stardewvalley")
+                        // "mPackageName" -> field.set(loadedApk, "com.chucklefish.stardewvalley") // REMOVED: Delayed until game launch
                     }
                 } catch (e: Exception) {}
             }
@@ -219,10 +219,47 @@ class VirtualLauncher(private val context: Context) {
                 } catch (e: Exception) { PotataApp.addLog("Activity Spoof FAIL: ${e.message}") }
             }
         }
+        
+        @SuppressLint("DiscouragedPrivateApi")
+        private fun hijackPackageName(context: Context) {
+            try {
+                val activityThreadClass = Class.forName("android.app.ActivityThread")
+                val currentActivityThread = activityThreadClass.getDeclaredMethod("currentActivityThread").invoke(null)
+                
+                // 1. Hijack AppInfo
+                val mBoundApplicationField = activityThreadClass.getDeclaredField("mBoundApplication")
+                mBoundApplicationField.isAccessible = true
+                val mBoundApplication = mBoundApplicationField.get(currentActivityThread)
+                val infoField = mBoundApplication.javaClass.getDeclaredField("appInfo")
+                infoField.isAccessible = true
+                val appInfo = infoField.get(mBoundApplication) as ApplicationInfo
+                appInfo.packageName = "com.chucklefish.stardewvalley"
+                
+                // 2. Hijack LoadedApk
+                // We need to find the LoadedApk for the *host* package but rename it inside
+                val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
+                mPackagesField.isAccessible = true
+                val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
+                // Try to find via host package first
+                val loadedApkWeakRef = mPackages[context.packageName] as? java.lang.ref.WeakReference<*>
+                val loadedApk = loadedApkWeakRef?.get()
+                
+                if (loadedApk != null) {
+                    val mPackageNameField = loadedApk.javaClass.getDeclaredField("mPackageName")
+                    mPackageNameField.isAccessible = true
+                    mPackageNameField.set(loadedApk, "com.chucklefish.stardewvalley")
+                }
+                
+                PotataApp.addLog("Package Name: HIJACKED")
+            } catch (e: Exception) {
+                PotataApp.addLog("Package Hijack FAIL: ${e.message}")
+            }
+        }
 
         override fun callActivityOnCreate(activity: Activity, icicle: Bundle?) {
             spoofContext(activity)
             if (activity.javaClass.name.contains("chucklefish")) {
+                hijackPackageName(activity) // Trigger deep spoofing only for game
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             }
             base.callActivityOnCreate(activity, icicle)
