@@ -80,6 +80,7 @@ jobs:
             -   name: Checkout game reference assemblies
                 run: |
                     git clone --depth 1 https://github.com/ZaneYork/StardewValley-Android-References.git "$HOME/StardewValley"
+                    mv "$HOME/StardewValley/Stardew Valley.dll" "$HOME/StardewValley/StardewValley.Vanilla.dll"
 
             -   name: Install Android Workload
                 run: dotnet workload install android
