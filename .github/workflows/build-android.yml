@@ -20,13 +20,30 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
 
-    # Note: We skip the SMAPI C# build in CI because it requires game files.
-    # To test properly, you should eventually place a real StardewModdingAPI.dll 
-    # in android/app/src/main/assets/
-    - name: Ensure Assets Directory
+    # --- SMAPI Build Start ---
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 6.0.x
+
+    - name: Install Android Workload
+      run: dotnet workload install android
+
+    - name: Checkout Game Reference Assemblies
+      run: |
+        git clone --depth 1 https://github.com/ZaneYork/StardewValley-Android-References.git "$HOME/StardewValley"
+        mv "$HOME/StardewValley/Stardew Valley.dll" "$HOME/StardewValley/StardewValley.Vanilla.dll"
+
+    - name: Build SMAPI Core
+      run: |
+        dotnet build smapi-engine/src/SMAPI/SMAPI.csproj -c Release
+
+    - name: Install SMAPI to Assets
       run: |
         mkdir -p android/app/src/main/assets
-        touch android/app/src/main/assets/StardewModdingAPI.dll
+        cp smapi-engine/src/SMAPI/bin/Release/net6.0-android/StardewModdingAPI.dll android/app/src/main/assets/
+        cp smapi-engine/src/SMAPI/bin/Release/net6.0-android/StardewModdingAPI.pdb android/app/src/main/assets/ || true
+    # --- SMAPI Build End ---
 
     # Build Android APK using Native Kotlin
     - name: Set up Android SDK
