@@ -199,6 +199,23 @@ internal class SGame : Game1
         // The Initial* fields should no longer be used after this point, since mods may further override them after initialization.
         this.InitialInput = null;
         this.InitialMultiplayer = null;
+
+        // On Android, attach the view to the Activity
+        if (Constants.TargetPlatform == GamePlatform.Android)
+        {
+            try
+            {
+                var view = this.Services.GetService(typeof(Android.Views.View)) as Android.Views.View;
+                if (view != null)
+                {
+                    com.chucklefish.stardewvalley.StardewValley.Instance?.SetView(view);
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Monitor.Log($"Failed to attach Android View: {ex}", LogLevel.Error);
+            }
+        }
     }
 
     /// <summary>The method called when loading or creating a save.</summary>

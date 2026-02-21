@@ -18,20 +18,40 @@ namespace com.chucklefish.stardewvalley
               ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden | ConfigChanges.ScreenSize)]
     public class StardewValley : AndroidGameActivity
     {
+        public static StardewValley Instance { get; private set; }
+
         protected override void OnCreate(Bundle bundle)
         {
             base.OnCreate(bundle);
+            Instance = this;
             
             try
             {
-                // Launch SMAPI
-                StardewModdingAPI.Program.Main(new string[0]);
+                // Launch SMAPI in a separate thread to avoid blocking OnCreate (ANR)
+                var t = new System.Threading.Thread(() => 
+                {
+                    try 
+                    {
+                        StardewModdingAPI.Program.Main(new string[0]);
+                    }
+                    catch (Exception ex)
+                    {
+                        Android.Util.Log.Error("SMAPI", $"Bridge Thread Failed: {ex}");
+                    }
+                });
+                t.IsBackground = true;
+                t.Start();
             }
             catch (Exception ex)
             {
                 Android.Util.Log.Error("SMAPI", $"Bridge Failed: {ex}");
                 throw;
             }
+        }
+
+        public void SetView(Android.Views.View view)
+        {
+            RunOnUiThread(() => SetContentView(view));
         }
     }
 }
