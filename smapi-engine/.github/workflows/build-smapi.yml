@@ -79,7 +79,7 @@ jobs:
 
             -   name: Checkout game reference assemblies
                 run: |
-                    git clone --depth 1 https://github.com/StardewModders/mod-reference-assemblies.git "$HOME/StardewValley"
+                    git clone --depth 1 https://github.com/ZaneYork/StardewValley-Android-References.git "$HOME/StardewValley"
 
             -   name: Build SMAPI
                 shell: pwsh

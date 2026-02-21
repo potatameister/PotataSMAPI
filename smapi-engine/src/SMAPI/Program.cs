@@ -33,7 +33,8 @@ internal class Program
     public static void Main(string[] args)
     {
         Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture; // per StardewValley.Program.Main
-        Console.Title = $"SMAPI {EarlyConstants.RawApiVersion}";
+        if (EarlyConstants.Platform != GamePlatform.Android)
+            Console.Title = $"SMAPI {EarlyConstants.RawApiVersion}";
 
         try
         {
