@@ -11,7 +11,7 @@ namespace com.chucklefish.stardewvalley
               Name = "com.chucklefish.stardewvalley.StardewValley",
               MainLauncher = true,
               Icon = "@drawable/icon",
-              Theme = "@style/Theme.Splash",
+              Theme = "@style/Theme.AppCompat.NoActionBar",
               AlwaysRetainTaskState = true,
               LaunchMode = LaunchMode.SingleInstance,
               ScreenOrientation = ScreenOrientation.SensorLandscape,
