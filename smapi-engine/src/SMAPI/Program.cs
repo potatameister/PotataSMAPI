@@ -36,6 +36,24 @@ internal class Program
         if (EarlyConstants.Platform != GamePlatform.Android)
             Console.Title = $"SMAPI {EarlyConstants.RawApiVersion}";
 
+        if (EarlyConstants.Platform == GamePlatform.Android)
+        {
+            try
+            {
+                // Force load the vanilla game assembly to bypass resolution ambiguity
+                string vanillaPath = Path.Combine(EarlyConstants.GamePath, "assemblies", "StardewValley.Vanilla.dll");
+                if (File.Exists(vanillaPath))
+                {
+                    Assembly.LoadFrom(vanillaPath);
+                    Console.WriteLine("[SMAPI] Pre-loaded StardewValley.Vanilla.dll");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SMAPI] Failed to pre-load vanilla game: {ex}");
+            }
+        }
+
         try
         {
             AppDomain.CurrentDomain.AssemblyResolve += Program.CurrentDomain_AssemblyResolve;
@@ -266,7 +284,10 @@ internal class Program
         if (showMessage)
             Console.WriteLine("Game has ended. Press any key to exit.");
         Thread.Sleep(100);
-        Console.ReadKey();
+        
+        if (EarlyConstants.Platform != GamePlatform.Android)
+            Console.ReadKey();
+
         Environment.Exit(0);
     }
 }
