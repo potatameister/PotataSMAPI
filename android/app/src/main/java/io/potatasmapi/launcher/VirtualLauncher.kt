@@ -24,6 +24,7 @@ class VirtualLauncher(private val context: Context) {
 
     fun launch(activityName: String?, onComplete: () -> Unit) {
         try {
+            val hostPackageName = "io.potatasmapi.launcher" // Hardcoded to match build.gradle
             val virtualRoot = File(context.filesDir, "virtual/stardew")
             val libDir = File(virtualRoot, "lib")
             val sdcardRoot = File(Environment.getExternalStorageDirectory(), "PotataSMAPI")
@@ -74,16 +75,16 @@ class VirtualLauncher(private val context: Context) {
 
             // 4. System Hooks
             val baseApk = allApks[0].absolutePath
-            injectSystemRecords(classLoader, baseApk, nativeLibPath, virtualRoot.absolutePath)
+            injectSystemRecords(classLoader, baseApk, nativeLibPath, virtualRoot.absolutePath, hostPackageName)
             injectInstrumentation(classLoader, baseApk, nativeLibPath)
-            injectVirtualResources(dexPath)
+            injectVirtualResources(dexPath, hostPackageName)
 
             // 5. Fire Launch
             val targetActivity = detectEntryPoint(classLoader, activityName)
             (context as Activity).runOnUiThread {
                 try {
                     val intent = Intent().apply {
-                        setClassName(context.packageName, ProxyActivity::class.java.name)
+                        setClassName(hostPackageName, ProxyActivity::class.java.name)
                         putExtra("TARGET_ACTIVITY", targetActivity)
                         putExtra("DEX_PATH", dexPath)
                         putExtra("LIB_PATH", nativeLibPath)
@@ -118,7 +119,7 @@ class VirtualLauncher(private val context: Context) {
     }
 
     @SuppressLint("DiscouragedPrivateApi")
-    private fun injectSystemRecords(classLoader: ClassLoader, baseApk: String, libDir: String, dataDir: String) {
+    private fun injectSystemRecords(classLoader: ClassLoader, baseApk: String, libDir: String, dataDir: String, hostPackageName: String) {
         try {
             val activityThreadClass = Class.forName("android.app.ActivityThread")
             val currentActivityThread = activityThreadClass.getDeclaredMethod("currentActivityThread").invoke(null)
@@ -144,8 +145,11 @@ class VirtualLauncher(private val context: Context) {
             val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
             mPackagesField.isAccessible = true
             val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
-            val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
-            val loadedApk = loadedApkWeakRef.get() ?: return
+            val loadedApkWeakRef = mPackages[hostPackageName] as? java.lang.ref.WeakReference<*>
+            val loadedApk = loadedApkWeakRef?.get() ?: run {
+                PotataApp.addLog("System Hook Fail: LoadedApk not found for $hostPackageName")
+                return
+            }
             val loadedApkClass = Class.forName("android.app.LoadedApk")
             
             val fields = loadedApkClass.declaredFields
@@ -165,7 +169,7 @@ class VirtualLauncher(private val context: Context) {
         } catch (e: Exception) { PotataApp.addLog("System Hook Fail: ${e.message}") }
     }
 
-    private fun injectVirtualResources(dexPath: String) {
+    private fun injectVirtualResources(dexPath: String, hostPackageName: String) {
         try {
             val apkPaths = dexPath.split(File.pathSeparator).toTypedArray()
             val activityThreadClass = Class.forName("android.app.ActivityThread")
@@ -173,8 +177,8 @@ class VirtualLauncher(private val context: Context) {
             val mPackagesField = activityThreadClass.getDeclaredField("mPackages")
             mPackagesField.isAccessible = true
             val mPackages = mPackagesField.get(currentActivityThread) as MutableMap<String, *>
-            val loadedApkWeakRef = mPackages[context.packageName] as java.lang.ref.WeakReference<*>
-            val loadedApk = loadedApkWeakRef.get() ?: return
+            val loadedApkWeakRef = mPackages[hostPackageName] as? java.lang.ref.WeakReference<*>
+            val loadedApk = loadedApkWeakRef?.get() ?: return
             val loadedApkClass = Class.forName("android.app.LoadedApk")
             
             loadedApkClass.getDeclaredField("mSplitResDirs").apply { isAccessible = true }.set(loadedApk, apkPaths)
