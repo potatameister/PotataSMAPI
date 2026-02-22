@@ -31,10 +31,11 @@ class PotataApp : Application() {
         
         fun setupEnvironment() {
             try {
+                val ctx = getAppContext() ?: return
                 val sdcardRoot = File(android.os.Environment.getExternalStorageDirectory(), "PotataSMAPI")
                 baseDir = sdcardRoot.absolutePath
                 assembliesPath = File(sdcardRoot, "assemblies").absolutePath
-                val virtualRoot = File(getAppContext()?.filesDir ?: return, "virtual/stardew")
+                val virtualRoot = File(ctx.filesDir, "virtual/stardew")
                 virtualLibPath = File(virtualRoot, "lib").absolutePath
                 
                 android.system.Os.setenv("MONO_PATH", assembliesPath!!, true)
@@ -92,22 +93,6 @@ class PotataApp : Application() {
             override fun onActivityPaused(activity: Activity) {}
             override fun onActivityStopped(activity: Activity) {}
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle?) {}
-            override fun onActivityDestroyed(activity: Activity) {}
-        })
-
-        addLog("Launcher core initialized.")
-    }
-        addLog("--- NEW SESSION ---")
-
-        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-                mountAssets(activity)
-            }
-            override fun onActivityStarted(activity: Activity) {}
-            override fun onActivityResumed(activity: Activity) {}
-            override fun onActivityPaused(activity: Activity) {}
-            override fun onActivityStopped(activity: Activity) {}
-            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
             override fun onActivityDestroyed(activity: Activity) {}
         })
 
