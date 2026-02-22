@@ -31,7 +31,8 @@ jobs:
 
     - name: Build SMAPI Core
       run: |
-        dotnet build smapi-engine/src/SMAPI/SMAPI.csproj -c Release
+        mkdir -p /tmp/game
+        dotnet build smapi-engine/src/SMAPI/SMAPI.csproj -c Release -p:GamePath=/tmp/game
 
     - name: Install SMAPI to Assets
       run: |
