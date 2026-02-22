@@ -30,9 +30,26 @@ class ProxyActivity : Activity() {
 
             PotataApp.addLog("Proxy: Initializing Engine...")
             
+            // Fix: Copy APKs to read-only location for DexClassLoader
+            val dexRoot = File(filesDir, "dex").apply { mkdirs() }
+            val sourceApks = dexPath.split(File.pathSeparator).filter { it.endsWith(".apk") }
+            val dexPathList = mutableListOf<String>()
+            
+            for (apkPath in sourceApks) {
+                val sourceFile = File(apkPath)
+                val destFile = File(dexRoot, sourceFile.name)
+                sourceFile.inputStream().use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                destFile.setReadOnly()
+                dexPathList.add(destFile.absolutePath)
+            }
+            
+            val fixedDexPath = dexPathList.joinToString(File.pathSeparator)
+            
             // 1. Setup Virtual ClassLoader for this instance
             virtualClassLoader = DexClassLoader(
-                dexPath, 
+                fixedDexPath, 
                 File(codeCacheDir, "opt_dex").absolutePath, 
                 libPath, 
                 this.javaClass.classLoader

@@ -35,8 +35,22 @@ class VirtualLauncher(private val context: Context) {
 
             PotataApp.addLog("--- VIRTUAL BOOT SEQUENCE ---")
             
+            // Fix: Copy APKs to a read-only location for DexClassLoader
+            val dexRoot = File(context.filesDir, "dex").apply { mkdirs() }
             val allApks = virtualRoot.listFiles()?.filter { it.name.endsWith(".apk") } ?: emptyList()
-            val dexPath = allApks.joinToString(File.pathSeparator) { it.absolutePath }
+            
+            // Copy each APK to dex folder (making them read-only)
+            val dexPathList = mutableListOf<String>()
+            for (apk in allApks) {
+                val destFile = File(dexRoot, apk.name)
+                apk.inputStream().use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                destFile.setReadOnly()
+                dexPathList.add(destFile.absolutePath)
+            }
+            
+            val dexPath = dexPathList.joinToString(File.pathSeparator)
             val optimizedDexPath = File(context.codeCacheDir, "opt_dex").apply { mkdirs() }.absolutePath
             val nativeLibPath = libDir.absolutePath
 
