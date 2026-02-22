@@ -1,13 +1,4 @@
 using System;
-using Android.App;
-using Android.Content;
-using Android.Content.PM;
-using Android.OS;
-using Microsoft.Xna.Framework;
-
-namespace com.chucklefish.stardewvalley
-{
-using System;
 using System.IO;
 using Android.App;
 using Android.Content;
@@ -17,6 +8,11 @@ using Microsoft.Xna.Framework;
 
 namespace com.chucklefish.stardewvalley
 {
+    /**
+     * StardewValley Activity Shim.
+     * This class is injected via the modded Stardew Valley.dll (SMAPI).
+     * It intercepts the game launch and bootstraps the SMAPI engine.
+     */
     [Activity(Label = "Stardew Valley", 
               Name = "com.chucklefish.stardewvalley.StardewValley",
               MainLauncher = true,
@@ -32,11 +28,16 @@ namespace com.chucklefish.stardewvalley
         public static Android.Views.View CurrentView { get; private set; }
         private static bool IsSmapiRunning = false;
 
+        static StardewValley()
+        {
+            try { File.AppendAllText("/sdcard/PotataSMAPI/bridge_log.txt", $"[{DateTime.Now:HH:mm:ss}] [Static] Bridge Class Loaded.\n"); } catch {}
+        }
+
         private void Log(string msg)
         {
             try
             {
-                File.AppendAllText("/sdcard/PotataSMAPI/bridge_log.txt", $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
+                File.AppendAllText("/sdcard/PotataSMAPI/bridge_log.txt", $"[{DateTime.Now:HH:mm:ss}] [Instance] {msg}\n");
             }
             catch {}
             Android.Util.Log.Debug("SMAPI_Bridge", msg);
@@ -50,53 +51,54 @@ namespace com.chucklefish.stardewvalley
             
             if (CurrentView != null)
             {
-                Log("Restoring existing view...");
+                Log("Restoring existing game view...");
                 SetContentView(CurrentView);
                 return;
             }
 
             if (IsSmapiRunning)
             {
-                Log("SMAPI is already running but View is null. Waiting...");
+                Log("SMAPI engine already active. Waiting for View signal...");
                 return;
             }
 
             try
             {
-                Log("Starting SMAPI thread...");
+                Log("Initial Boot: Bootstrapping SMAPI thread...");
                 IsSmapiRunning = true;
                 var t = new System.Threading.Thread(() => 
                 {
                     try 
                     {
-                        Log("Calling Program.Main...");
+                        Log("SMAPI Thread: Calling Program.Main...");
                         StardewModdingAPI.Program.Main(new string[0]);
-                        Log("Program.Main returned (unexpected).");
+                        Log("SMAPI Thread: Program.Main exited.");
                     }
                     catch (Exception ex)
                     {
-                        Log($"Bridge Thread Failed: {ex}");
-                        Android.Util.Log.Error("SMAPI", $"Bridge Thread Failed: {ex}");
+                        Log($"SMAPI Thread CRASH: {ex}");
+                        Android.Util.Log.Error("SMAPI", $"SMAPI Thread CRASH: {ex}");
                     }
                 });
                 t.IsBackground = true;
                 t.Start();
+                Log("SMAPI Thread started.");
             }
             catch (Exception ex)
             {
-                Log($"Bridge Failed: {ex}");
-                Android.Util.Log.Error("SMAPI", $"Bridge Failed: {ex}");
+                Log($"Bridge Startup FAIL: {ex}");
+                Android.Util.Log.Error("SMAPI", $"Bridge Startup FAIL: {ex}");
                 throw;
             }
         }
 
         public void SetView(Android.Views.View view)
         {
-            Log("SetView called.");
+            Log("SetView signal received from Engine.");
             CurrentView = view;
             RunOnUiThread(() => 
             {
-                Log("Setting Content View on UI Thread.");
+                Log("Applying Game View to Activity...");
                 SetContentView(view);
             });
         }

@@ -6,10 +6,14 @@ import android.os.Environment
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 /**
- * The VirtualExtractor (Hyper-Diagnostic Edition).
+ * PatcherService: The Virtual Environment Architect.
+ * It prepares the game for modded execution by extracting assemblies and neutralizing original assets.
  */
 class PatcherService(private val context: Context) {
     private val TAG = "PotataVirtual"
@@ -19,7 +23,7 @@ class PatcherService(private val context: Context) {
     }
 
     fun importGame(originalApkPaths: List<String>) {
-        log("--- HYPER-IMPORT START ---")
+        log("--- VIRTUAL IMPORT START ---")
 
         val virtualRoot = File(context.filesDir, "virtual/stardew")
         if (virtualRoot.exists()) virtualRoot.deleteRecursively()
@@ -28,15 +32,13 @@ class PatcherService(private val context: Context) {
         val libDir = File(virtualRoot, "lib").apply { mkdirs() }
         val sdcardRoot = File(Environment.getExternalStorageDirectory(), "PotataSMAPI")
         
-        // PURGE GHOSTS
-        log("Purging old redirection folders...")
+        // Purge old files
+        log("Clearing environment...")
         File(sdcardRoot, "assets").deleteRecursively()
         File(sdcardRoot, "assemblies").deleteRecursively()
         
         val assetsDir = File(sdcardRoot, "assets").apply { mkdirs() }
         val assemblyDir = File(sdcardRoot, "assemblies").apply { mkdirs() }
-        
-        var totalPatched = 0
         
         originalApkPaths.forEachIndexed { index, path ->
             val sourceFile = if (path.startsWith("content://")) {
@@ -50,79 +52,83 @@ class PatcherService(private val context: Context) {
             val targetName = if (index == 0) "base.apk" else "split_$index.apk"
             val virtualApk = File(virtualRoot, targetName)
 
-            log("Cloning segment: $targetName")
-            sourceFile.copyTo(virtualApk, overwrite = true)
+            log("Processing: $targetName")
             
-            totalPatched += extractAndPatch(virtualApk, libDir, assemblyDir, assetsDir)
+            // Extract and neutralize in one pass
+            extractAndNeutralize(sourceFile, virtualApk, libDir, assemblyDir)
             
-            virtualApk.setReadOnly()
             if (path.startsWith("content://")) sourceFile.delete()
         }
 
         // 3. Inject SMAPI
-        log("Injecting SMAPI core...")
-        context.assets.open("StardewModdingAPI.dll").use { input ->
-            val target = File(assemblyDir, "Stardew Valley.dll")
-            target.outputStream().use { input.copyTo(it) }
+        log("Deploying SMAPI Engine...")
+        try {
+            context.assets.open("StardewModdingAPI.dll").use { input ->
+                val target = File(assemblyDir, "Stardew Valley.dll")
+                target.outputStream().use { input.copyTo(it) }
+            }
+            log("SMAPI v4.5.1 Primed.")
+        } catch (e: Exception) {
+            log("SMAPI Injection Failed: ${e.message}")
         }
         
-        log("--- IMPORT SUCCESSFUL ---")
-        log("Files Patched: $totalPatched")
-        log("Engine: SMAPI v4.5.1 Primed.")
+        log("--- VIRTUAL READY ---")
         File(virtualRoot, "virtual.ready").createNewFile()
     }
 
-    private fun extractAndPatch(apk: File, libDir: File, assemblyDir: File, assetsDir: File): Int {
+    private fun extractAndNeutralize(source: File, targetApk: File, libDir: File, assemblyDir: File) {
         val preferredAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
-        var count = 0
-        ZipFile(apk).use { zip ->
-            zip.entries().asSequence().forEach { entry ->
-                val name = entry.name
-                
-                // 1. Assemblies & Configs
-                if (name.contains("assemblies/") && (name.endsWith(".dll") || name.endsWith(".json") || name.endsWith(".config"))) {
-                    val target = File(assemblyDir, name.substringAfterLast("/"))
-                    zip.getInputStream(entry).use { input ->
-                        val bytes = input.readBytes()
-                        // val patched = patchBinaryPaths(bytes) // Disabled to prevent corruption
-                        // if (patched !== bytes) count++
-                        target.writeBytes(bytes)
-                    }
-                    if (name.endsWith("Stardew Valley.dll", ignoreCase = true)) {
-                        target.renameTo(File(assemblyDir, "StardewValley.Vanilla.dll"))
-                    }
-                }
-                
-                // 2. Content (SKIP EXTRACTION unless specific files are needed)
-                // Note: assets/Content is mounted via addAssetPath in PotataApp.mountAssets
-                // We only extract if we need to patch specific path-heavy XMLs or if we want to support overrides easily.
-                // For now, let's keep it minimal as per the efficiency plan.
-                /*
-                if (name.startsWith("assets/Content/")) {
-                    // Selective extraction logic could go here
-                }
-                */
-                
-                // 3. Native Libs
-                if (name.startsWith("lib/$preferredAbi/") && name.endsWith(".so")) {
-                    val target = File(libDir, name.substringAfterLast("/"))
-                    if (!target.exists()) {
-                        zip.getInputStream(entry).use { input ->
-                            val bytes = input.readBytes()
-                            // val patched = patchBinaryPaths(bytes) // Disabled to prevent corruption
-                            // if (patched !== bytes) count++
-                            target.writeBytes(bytes)
+        
+        ZipInputStream(source.inputStream()).use { zis ->
+            ZipOutputStream(targetApk.outputStream()).use { zos ->
+                var entry: ZipEntry? = zis.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    var shouldCopy = true
+
+                    // 1. Native Libs Extraction
+                    if (name.contains("lib/") && name.contains(preferredAbi) && name.endsWith(".so")) {
+                        val libFile = File(libDir, name.substringAfterLast("/"))
+                        if (!libFile.exists()) {
+                            libFile.outputStream().use { zis.copyTo(it) }
                         }
                     }
+
+                    // 2. Assemblies Extraction & Neutralization
+                    // We check for "assemblies/" anywhere in the path to be safe (Xamarin split APKs can be weird)
+                    if (name.contains("assemblies/") && (name.endsWith(".dll") || name.endsWith(".json") || name.endsWith(".config") || name.endsWith(".dll.so"))) {
+                        val fileName = name.substringAfterLast("/")
+                        val targetDll = File(assemblyDir, fileName)
+                        
+                        // Extract to SD card for redirection
+                        targetDll.outputStream().use { zis.copyTo(it) }
+                        
+                        // Special handling for the main game DLL
+                        if (fileName.equals("Stardew Valley.dll", ignoreCase = true) || fileName.equals("StardewValley.dll", ignoreCase = true)) {
+                            targetDll.renameTo(File(assemblyDir, "StardewValley.Vanilla.dll"))
+                            log("Hijacked: $fileName")
+                        }
+
+                        // NEUTRALIZE: We skip copying assemblies to the virtual APK 
+                        // to force Mono to look at MONO_PATH (SD Card).
+                        shouldCopy = false 
+                    }
+
+                    if (shouldCopy) {
+                        try {
+                            zos.putNextEntry(ZipEntry(name))
+                            zis.copyTo(zos)
+                            zos.closeEntry()
+                        } catch (e: Exception) {
+                            // Ignore duplicates or errors
+                        }
+                    }
+
+                    zis.closeEntry()
+                    entry = zis.nextEntry
                 }
             }
         }
-        return count
-    }
-
-    private fun patchBinaryPaths(data: ByteArray): ByteArray {
-        // ... (Disabled) ...
-        return data
     }
 
     private fun copyUriToFile(uri: android.net.Uri, outFile: File) {
