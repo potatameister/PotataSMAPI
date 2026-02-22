@@ -2,6 +2,7 @@ package io.potatasmapi.launcher
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.content.res.AssetManager
 import android.os.Bundle
 import android.util.Log
@@ -12,10 +13,13 @@ class PotataApp : Application() {
     companion object {
         val logs = mutableStateListOf<String>()
         private var logFile: File? = null
+        var virtualLibPath: String? = null
+        var assembliesPath: String? = null
+        var baseDir: String? = null
 
         fun addLog(msg: String) {
             Log.d("Potata", msg)
-            logs.add(0, msg) // Newest first
+            logs.add(0, msg)
             saveLogToFile(msg)
         }
 
@@ -24,9 +28,33 @@ class PotataApp : Application() {
                 logFile?.appendText("[${java.util.Date()}] $msg\n")
             } catch (e: Exception) {}
         }
+        
+        fun setupEnvironment() {
+            try {
+                val sdcardRoot = File(android.os.Environment.getExternalStorageDirectory(), "PotataSMAPI")
+                baseDir = sdcardRoot.absolutePath
+                assembliesPath = File(sdcardRoot, "assemblies").absolutePath
+                val virtualRoot = File(getAppContext()?.filesDir ?: return, "virtual/stardew")
+                virtualLibPath = File(virtualRoot, "lib").absolutePath
+                
+                android.system.Os.setenv("MONO_PATH", assembliesPath!!, true)
+                android.system.Os.setenv("SMAPI_ANDROID_BASE_DIR", baseDir!!, true)
+                android.system.Os.setenv("HOME", baseDir!!, true)
+                android.system.Os.setenv("EXTERNAL_STORAGE", baseDir!!, true)
+                android.system.Os.setenv("LD_LIBRARY_PATH", virtualLibPath!!, true)
+                
+                addLog("Environment configured at app start")
+            } catch (e: Exception) {
+                Log.e("PotataApp", "Environment setup failed", e)
+            }
+        }
+        
+        private var appContext: Context? = null
+        fun getAppContext(): Context? = appContext
     }
     
     init {
+        appContext = this
         try {
             System.setProperty("os.name", "linux")
             System.setProperty("java.vm.vendor", "The Android Project")
@@ -39,6 +67,10 @@ class PotataApp : Application() {
     override fun onCreate() {
         super.onCreate()
         bypassHiddenApi()
+        
+        // Initialize environment as early as possible
+        setupEnvironment()
+        
         System.setProperty("user.home", filesDir.absolutePath)
         
         // Initialize persistent log
@@ -46,8 +78,25 @@ class PotataApp : Application() {
         if (!logDir.exists()) logDir.mkdirs()
         logFile = File(logDir, "launcher_log.txt")
         if (logFile?.exists() == true && logFile!!.length() > 1024 * 1024) {
-            logFile?.delete() // Clear if > 1MB
+            logFile?.delete()
         }
+        addLog("--- NEW SESSION ---")
+
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+                mountAssets(activity)
+                mountNativeLibs(activity)
+            }
+            override fun onActivityStarted(activity: Activity) {}
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivityStopped(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle?) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
+
+        addLog("Launcher core initialized.")
+    }
         addLog("--- NEW SESSION ---")
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
@@ -98,6 +147,38 @@ class PotataApp : Application() {
             }
         } catch (e: Exception) {
             Log.e("PotataApp", "Asset mount failed", e)
+        }
+    }
+    
+    private fun mountNativeLibs(activity: Activity) {
+        try {
+            val virtualLibPath = PotataApp.virtualLibPath ?: return
+            val libDir = File(virtualLibPath)
+            if (!libDir.exists()) return
+            
+            // Preload native libraries needed by Mono/Xamarin
+            val nativeLibs = listOf("libmonosgen-2.0.so", "libmonodroid.so", "libxamarin-app.so")
+            for (libName in nativeLibs) {
+                val libFile = File(libDir, libName)
+                if (libFile.exists()) {
+                    try {
+                        System.load(libFile.absolutePath)
+                        Log.d("PotataApp", "Preloaded $libName for ${activity.javaClass.name}")
+                    } catch (e: Throwable) {
+                        Log.e("PotataApp", "Failed to load $libName: ${e.message}")
+                    }
+                }
+            }
+            
+            // Update LD_LIBRARY_PATH for this activity
+            val currentLdLib = android.system.Os.getenv("LD_LIBRARY_PATH") ?: ""
+            if (!currentLdLib.contains(virtualLibPath)) {
+                android.system.Os.setenv("LD_LIBRARY_PATH", "$virtualLibPath:$currentLdLib", true)
+            }
+            
+            addLog("Native libs ready for ${activity.javaClass.simpleName}")
+        } catch (e: Exception) {
+            Log.e("PotataApp", "Native lib mount failed", e)
         }
     }
 }
