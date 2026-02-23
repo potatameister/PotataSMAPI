@@ -20,19 +20,25 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
 
-    # --- SMAPI already built and in assets folder ---
-    # Skip SMAPI build - using pre-built StardewModdingAPI.dll from assets
-    # --- End SMAPI Build ---
-
-    # Build Android APK using Native Kotlin
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
+
+    - name: Install build tools
+      run: |
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
+        $ANDROID_HOME/build-tools/34.0.0/zipalign --version || echo "zipalign not in build-tools"
+        echo "Installing apksigner if needed..."
 
     - name: Build Android APK
       run: |
         cd android
         chmod +x gradlew
-        ./gradlew assembleDebug
+        ./gradlew clean assembleDebug --stacktrace
+
+    - name: Verify APK
+      run: |
+        ls -lh android/app/build/outputs/apk/debug/
+        unzip -l android/app/build/outputs/apk/debug/app-debug.apk | head -20
 
     - name: Upload APK
       uses: actions/upload-artifact@v4

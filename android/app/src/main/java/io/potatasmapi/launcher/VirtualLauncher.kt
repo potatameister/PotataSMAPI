@@ -27,7 +27,7 @@ class VirtualLauncher(private val context: Context) {
             val hostPackageName = "io.potatasmapi.launcher" 
             val virtualRoot = File(context.filesDir, "virtual/stardew")
             val libDir = File(virtualRoot, "lib")
-            val sdcardRoot = File(Environment.getExternalStorageDirectory(), "PotataSMAPI")
+            val sdcardRoot = File(context.getExternalFilesDir(null), "PotataSMAPI")
             
             if (!File(virtualRoot, "virtual.ready").exists()) {
                 throw Exception("Environment not ready. Please import the game first.")
@@ -329,8 +329,8 @@ class VirtualLauncher(private val context: Context) {
 
     private class PotataContext(base: Context, private val baseApk: String, private val libDir: String) : ContextWrapper(base) {
         override fun getPackageName(): String = "com.chucklefish.stardewvalley"
-        override fun getExternalFilesDir(type: String?): File? = File(Environment.getExternalStorageDirectory(), "PotataSMAPI/Files")
-        override fun getFilesDir(): File = File(Environment.getExternalStorageDirectory(), "PotataSMAPI/Internal")
+        override fun getExternalFilesDir(type: String?): File? = File(context.getExternalFilesDir(null), "PotataSMAPI/Files")
+        override fun getFilesDir(): File = File(context.getExternalFilesDir(null), "PotataSMAPI/Internal")
         override fun getApplicationInfo(): ApplicationInfo {
             val info = super.getApplicationInfo()
             info.packageName = "com.chucklefish.stardewvalley"

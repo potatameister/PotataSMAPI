@@ -32,7 +32,7 @@ class PotataApp : Application() {
         fun setupEnvironment() {
             try {
                 val ctx = getAppContext() ?: return
-                val sdcardRoot = File(android.os.Environment.getExternalStorageDirectory(), "PotataSMAPI")
+                val sdcardRoot = File(ctx.getExternalFilesDir(null), "PotataSMAPI")
                 baseDir = sdcardRoot.absolutePath
                 assembliesPath = File(sdcardRoot, "assemblies").absolutePath
                 val virtualRoot = File(ctx.filesDir, "virtual/stardew")
@@ -75,7 +75,7 @@ class PotataApp : Application() {
         System.setProperty("user.home", filesDir.absolutePath)
         
         // Initialize persistent log
-        val logDir = File("/sdcard/PotataSMAPI")
+        val logDir = File(filesDir.parentFile, "PotataSMAPI")
         if (!logDir.exists()) logDir.mkdirs()
         logFile = File(logDir, "launcher_log.txt")
         if (logFile?.exists() == true && logFile!!.length() > 1024 * 1024) {

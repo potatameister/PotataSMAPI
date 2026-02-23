@@ -76,6 +76,32 @@ class MainActivity : ComponentActivity() {
     private var manualApkPath by mutableStateOf<String?>(null)
     private var modList by mutableStateOf<List<ModInfo>>(emptyList())
 
+    private fun launchModdedGame() {
+        try {
+            val moddedApk = File(getExternalFilesDir(null), "PotataSMAPI/StardewValley.Modded.apk")
+            if (!moddedApk.exists()) {
+                statusText = "Modded APK not found. Patch again."
+                isPatched = false
+                return
+            }
+            
+            val intent = packageManager.getLaunchIntentForPackage("com.potatasmapi.stardew")
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+            } else {
+                val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(Uri.fromFile(moddedApk), "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(installIntent)
+                statusText = "Please install the modded APK first"
+            }
+        } catch (e: Exception) {
+            statusText = "Launch failed: ${e.message}"
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         checkPermissionStatus()
@@ -249,11 +275,11 @@ class MainActivity : ComponentActivity() {
         
         LaunchedEffect(Unit) {
             loadMods()
-            val virtualMarker = File(filesDir, "virtual/stardew/virtual.ready")
-            if (virtualMarker.exists()) isPatched = true
+            val moddedApk = File(getExternalFilesDir(null), "PotataSMAPI/StardewValley.Modded.apk")
+            if (moddedApk.exists()) isPatched = true
             
             // Load persistent logs
-            val logFile = File("/sdcard/PotataSMAPI/launcher_log.txt")
+            val logFile = File(getExternalFilesDir(null), "PotataSMAPI/launcher_log.txt")
             if (logFile.exists()) {
                 val lastLogs = logFile.readLines().takeLast(100).reversed()
                 PotataApp.logs.clear()
@@ -332,16 +358,15 @@ class MainActivity : ComponentActivity() {
                                 val pathsToImport = if (manualApkPath != null) listOf(manualApkPath!!) else stardewData.first
                                 if (pathsToImport.isNotEmpty()) {
                                     isPatching = true
-                                    statusText = "Importing game resources..."
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            PatcherService(this@MainActivity).importGame(pathsToImport)
+                                    statusText = "Patching APK..."
+                                    PatcherService(this@MainActivity).importAndPatchGame(pathsToImport.first) { success, message ->
+                                        isPatching = false
+                                        if (success) {
                                             isPatched = true
-                                            statusText = "Success!"
-                                        } catch (e: Exception) {
-                                            statusText = "Import Failed: ${e.message}"
-                                            Log.e("Potata", "Error: ${Log.getStackTraceString(e)}")
-                                        } finally { isPatching = false }
+                                            statusText = "Modded APK ready! Install it when prompted."
+                                        } else {
+                                            statusText = "Error: $message"
+                                        }
                                     }
                                 }
                             },
@@ -353,9 +378,9 @@ class MainActivity : ComponentActivity() {
                             if (isPatching) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text("IMPORTING...", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("PATCHING APK...", color = Color.Black, fontWeight = FontWeight.Bold)
                             } else {
-                                Text("IMPORT GAME RESOURCES", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("CREATE MODDED APK", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         }
                     } else {
@@ -363,29 +388,17 @@ class MainActivity : ComponentActivity() {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
                                 onClick = { 
-                                    isLaunching = true
-                                    scope.launch(Dispatchers.IO) {
-                                        VirtualLauncher(this@MainActivity).launch(stardewData.second) {
-                                            isLaunching = false
-                                        }
-                                    }
+                                    launchModdedGame()
                                 },
-                                enabled = !isLaunching,
                                 modifier = Modifier.weight(1f).height(56.dp),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = StardewGreen)
                             ) {
-                                if (isLaunching) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("BOOTING...", color = Color.Black, fontWeight = FontWeight.Bold)
-                                } else {
-                                    Text("LAUNCH GAME", color = Color.Black, fontWeight = FontWeight.Bold)
-                                }
+                                Text("LAUNCH MODDED GAME", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                             IconButton(
                                 onClick = { 
-                                    File(filesDir, "virtual/stardew").deleteRecursively()
+                                    File(context.getExternalFilesDir(null), "PotataSMAPI/StardewValley.Modded.apk").delete()
                                     isPatched = false
                                     statusText = null
                                 },
