@@ -75,13 +75,15 @@ class MainActivity : ComponentActivity() {
     private var hasPermission by mutableStateOf(false)
     private var manualApkPath by mutableStateOf<String?>(null)
     private var modList by mutableStateOf<List<ModInfo>>(emptyList())
+    private var currentStatusText by mutableStateOf<String?>(null)
+    private var isModdedPatched by mutableStateOf(false)
 
     private fun launchModdedGame() {
         try {
             val moddedApk = File(getExternalFilesDir(null), "PotataSMAPI/StardewValley.Modded.apk")
             if (!moddedApk.exists()) {
-                statusText = "Modded APK not found. Patch again."
-                isPatched = false
+                currentStatusText = "Modded APK not found. Patch again."
+                isModdedPatched = false
                 return
             }
             
@@ -95,10 +97,10 @@ class MainActivity : ComponentActivity() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(installIntent)
-                statusText = "Please install the modded APK first"
+                currentStatusText = "Please install the modded APK first"
             }
         } catch (e: Exception) {
-            statusText = "Launch failed: ${e.message}"
+            currentStatusText = "Launch failed: ${e.message}"
         }
     }
 
@@ -269,9 +271,14 @@ class MainActivity : ComponentActivity() {
         val activePath = manualApkPath ?: autoPath
         
         var isPatching by remember { mutableStateOf(false) }
-        var isPatched by remember { mutableStateOf(false) }
-        var statusText by remember { mutableStateOf<String?>(null) }
+        var isPatched by remember { mutableStateOf(isModdedPatched) }
+        var statusText by remember { mutableStateOf(currentStatusText) }
         val scope = rememberCoroutineScope()
+        
+        LaunchedEffect(isModdedPatched, currentStatusText) {
+            isPatched = isModdedPatched
+            statusText = currentStatusText
+        }
         
         LaunchedEffect(Unit) {
             loadMods()
@@ -359,13 +366,16 @@ class MainActivity : ComponentActivity() {
                                 if (pathsToImport.isNotEmpty()) {
                                     isPatching = true
                                     statusText = "Patching APK..."
-                                    PatcherService(this@MainActivity).importAndPatchGame(pathsToImport.first) { success, message ->
+                                    PatcherService(this@MainActivity).importAndPatchGame(pathsToImport.firstOrNull() ?: "") { success, message ->
                                         isPatching = false
                                         if (success) {
                                             isPatched = true
+                                            isModdedPatched = true
                                             statusText = "Modded APK ready! Install it when prompted."
+                                            currentStatusText = "Modded APK ready! Install it when prompted."
                                         } else {
                                             statusText = "Error: $message"
+                                            currentStatusText = "Error: $message"
                                         }
                                     }
                                 }
@@ -398,9 +408,11 @@ class MainActivity : ComponentActivity() {
                             }
                             IconButton(
                                 onClick = { 
-                                    File(context.getExternalFilesDir(null), "PotataSMAPI/StardewValley.Modded.apk").delete()
+                                    File(getExternalFilesDir(null), "PotataSMAPI/StardewValley.Modded.apk").delete()
                                     isPatched = false
                                     statusText = null
+                                    isModdedPatched = false
+                                    currentStatusText = null
                                 },
                                 modifier = Modifier
                                     .size(56.dp)

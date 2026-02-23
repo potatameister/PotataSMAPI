@@ -265,7 +265,7 @@ class VirtualLauncher(private val context: Context) {
                     mBaseField.isAccessible = true
                     val currentBase = mBaseField.get(activity) as Context
                     if (currentBase !is PotataContext) {
-                        mBaseField.set(activity, PotataContext(currentBase, baseApk, libDir))
+                        mBaseField.set(activity, PotataContext(context, currentBase, baseApk, libDir))
                     }
                 } catch (e: Exception) { Log.e("Potata", "Context Spoof FAIL: ${e.message}") }
             }
@@ -327,10 +327,10 @@ class VirtualLauncher(private val context: Context) {
         override fun onDestroy() { base.onDestroy() }
     }
 
-    private class PotataContext(base: Context, private val baseApk: String, private val libDir: String) : ContextWrapper(base) {
+    private class PotataContext(private val outerContext: Context, base: Context, private val baseApk: String, private val libDir: String) : ContextWrapper(base) {
         override fun getPackageName(): String = "com.chucklefish.stardewvalley"
-        override fun getExternalFilesDir(type: String?): File? = File(context.getExternalFilesDir(null), "PotataSMAPI/Files")
-        override fun getFilesDir(): File = File(context.getExternalFilesDir(null), "PotataSMAPI/Internal")
+        override fun getExternalFilesDir(type: String?): File? = File(outerContext.getExternalFilesDir(null), "PotataSMAPI/Files")
+        override fun getFilesDir(): File = File(outerContext.getExternalFilesDir(null), "PotataSMAPI/Internal")
         override fun getApplicationInfo(): ApplicationInfo {
             val info = super.getApplicationInfo()
             info.packageName = "com.chucklefish.stardewvalley"
