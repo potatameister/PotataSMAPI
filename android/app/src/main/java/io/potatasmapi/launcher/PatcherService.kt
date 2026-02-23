@@ -76,9 +76,15 @@ class PatcherService(private val context: Context) {
 
     private fun promptInstall(apkFile: File, onComplete: (Boolean, String) -> Unit) {
         try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(Uri.fromFile(apkFile), "application/vnd.android.package-archive")
+                setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(intent)
             onComplete(true, "Modded APK created! Install it, then launch from PotataSMAPI.")
