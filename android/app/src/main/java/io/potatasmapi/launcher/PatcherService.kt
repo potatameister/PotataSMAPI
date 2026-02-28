@@ -87,7 +87,7 @@ class PatcherService(private val context: Context) {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(intent)
-            onComplete(true, "Modded APK created! Install it, then launch from PotataSMAPI.")
+            onComplete(true, "Modded APK ready! IMPORTANT: Uninstall original Stardew Valley first, then install this modded version.")
         } catch (e: Exception) {
             onComplete(false, "Failed to open installer: ${e.message}")
         }
@@ -116,22 +116,10 @@ class PatcherService(private val context: Context) {
     }
 
     private fun modifyManifest(decompiledDir: File) {
-        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
-        if (!manifestFile.exists()) {
-            throw Exception("AndroidManifest.xml not found")
-        }
-
-        try {
-            var content = manifestFile.readText()
-            
-            content = content.replace(Regex("""package="[^"]*""""), """package="$MODDED_PACKAGE"""")
-            content = content.replace("com.chucklefish.stardewvalley", MODDED_PACKAGE)
-            
-            manifestFile.writeText(content)
-            log("Package name changed to $MODDED_PACKAGE")
-        } catch (e: Exception) {
-            throw Exception("Failed to modify manifest: ${e.message}")
-        }
+        // Skip manifest modification - keep original package name
+        // User must uninstall original Stardew Valley first
+        // This avoids binary XML corruption issues
+        log("Keeping original package name - uninstall original game first!")
     }
 
     private fun injectSmapi(decompiledDir: File) {

@@ -57,6 +57,9 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
     
+    // AXML library for binary XML parsing/editing
+    implementation 'com.braincv:axml:1.1.0'
+    
     def compose_ui_version = '1.5.4'
     implementation "androidx.compose.ui:ui:$compose_ui_version"
     implementation "androidx.compose.ui:ui-graphics:$compose_ui_version"
