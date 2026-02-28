@@ -50,9 +50,8 @@ class PatcherService(private val context: Context) {
                 repackApk(extractedDir, unsignedApk)
 
                 log("Signing APK...")
-                val outputDir = File(context.getExternalFilesDir(null), "PotataSMAPI")
-                outputDir.mkdirs()
-                val finalApk = File(outputDir, "StardewValley.Modded.apk")
+                // Use cache dir for FileProvider compatibility
+                val finalApk = File(context.cacheDir, "StardewValley.Modded.apk")
                 signApk(unsignedApk, finalApk)
 
                 workDir.deleteRecursively()
@@ -76,6 +75,13 @@ class PatcherService(private val context: Context) {
 
     private fun promptInstall(apkFile: File, onComplete: (Boolean, String) -> Unit) {
         try {
+            // Also copy to external files dir for backup
+            val backupDir = File(context.getExternalFilesDir(null), "PotataSMAPI")
+            backupDir.mkdirs()
+            val backupFile = File(backupDir, "StardewValley.Modded.apk")
+            apkFile.copyTo(backupFile, overwrite = true)
+            log("APK backed up to: ${backupFile.absolutePath}")
+            
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
