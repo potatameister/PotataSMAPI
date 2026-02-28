@@ -127,45 +127,30 @@ class PatcherService(private val context: Context) {
             throw Exception("AndroidManifest.xml not found")
         }
 
+        // Try byte-level replacement (works sometimes for simple strings)
         try {
-            // Use AXML library to properly edit binary XML
-            val parser = com.braincv.axml.AxmlParser(manifestFile)
-            val doc = parser.document
+            val bytes = manifestFile.readBytes()
+            val original = "com.chucklefish.stardewvalley"
+            val modified = MODDED_PACKAGE
             
-            // Change package name
-            doc.setAttr("package", MODDED_PACKAGE)
+            var modifiedBytes = bytes
+            val originalBytes = original.toByteArray(Charsets.UTF_8)
+            val modifiedBytesArray = modified.toByteArray(Charsets.UTF_8)
             
-            // Change all references to original package
-            for (node in doc.allNodes) {
-                if (node is com.braincv.axml.Node.Element) {
-                    node.attributes.forEach { attr ->
-                        if (attr.value?.contains("com.chucklefish.stardewvalley") == true) {
-                            attr.value = attr.value.replace("com.chucklefish.stardewvalley", MODDED_PACKAGE)
-                        }
-                    }
-                }
+            // Replace all occurrences
+            var index = modifiedBytes.indexOf(originalBytes)
+            while (index >= 0) {
+                modifiedBytes = modifiedBytes.sliceArray(0 until index) + 
+                              modifiedBytesArray + 
+                              modifiedBytes.sliceArray((index + originalBytes.size) until modifiedBytes.size)
+                index = modifiedBytes.indexOf(originalBytes, index + modifiedBytesArray.size)
             }
             
-            // Write back as binary XML
-            val writer = com.braincv.axml.AxmlWriter(manifestFile)
-            writer.write(doc)
-            writer.close()
-            
+            manifestFile.writeBytes(modifiedBytes)
             log("Package name changed to $MODDED_PACKAGE")
         } catch (e: Exception) {
-            log("AXML failed: ${e.message}, trying text fallback...")
-            modifyManifestTextFallback(manifestFile)
-        }
-    }
-
-    private fun modifyManifestTextFallback(manifestFile: File) {
-        try {
-            var content = manifestFile.readBytes().toString(Charsets.UTF_8)
-            content = content.replace("com.chucklefish.stardewvalley", MODDED_PACKAGE)
-            manifestFile.writeBytes(content.toByteArray(Charsets.UTF_8))
-            log("Package changed (byte-level fallback)")
-        } catch (e: Exception) {
             log("Manifest modify failed: ${e.message}")
+            // Continue anyway - the APK will keep original package name
         }
     }
 
