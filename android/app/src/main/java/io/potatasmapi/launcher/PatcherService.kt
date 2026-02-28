@@ -87,7 +87,7 @@ class PatcherService(private val context: Context) {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(intent)
-            onComplete(true, "Modded APK ready! IMPORTANT: Uninstall original Stardew Valley first, then install this modded version.")
+            onComplete(true, "Modded APK ready! Install it alongside original game.")
         } catch (e: Exception) {
             onComplete(false, "Failed to open installer: ${e.message}")
         }
@@ -116,10 +116,51 @@ class PatcherService(private val context: Context) {
     }
 
     private fun modifyManifest(decompiledDir: File) {
-        // Skip manifest modification - keep original package name
-        // User must uninstall original Stardew Valley first
-        // This avoids binary XML corruption issues
-        log("Keeping original package name - uninstall original game first!")
+        val manifestFile = File(decompiledDir, "AndroidManifest.xml")
+        if (!manifestFile.exists()) {
+            throw Exception("AndroidManifest.xml not found")
+        }
+
+        try {
+            // Use AXML library to properly edit binary XML
+            val parser = com.braincv.axml.AxmlParser(manifestFile)
+            val doc = parser.document
+            
+            // Change package name
+            doc.setAttr("package", MODDED_PACKAGE)
+            
+            // Change all references to original package
+            for (node in doc.allNodes) {
+                if (node is com.braincv.axml.Node.Element) {
+                    node.attributes.forEach { attr ->
+                        if (attr.value?.contains("com.chucklefish.stardewvalley") == true) {
+                            attr.value = attr.value.replace("com.chucklefish.stardewvalley", MODDED_PACKAGE)
+                        }
+                    }
+                }
+            }
+            
+            // Write back as binary XML
+            val writer = com.braincv.axml.AxmlWriter(manifestFile)
+            writer.write(doc)
+            writer.close()
+            
+            log("Package name changed to $MODDED_PACKAGE")
+        } catch (e: Exception) {
+            log("AXML failed: ${e.message}, trying text fallback...")
+            modifyManifestTextFallback(manifestFile)
+        }
+    }
+
+    private fun modifyManifestTextFallback(manifestFile: File) {
+        try {
+            var content = manifestFile.readBytes().toString(Charsets.UTF_8)
+            content = content.replace("com.chucklefish.stardewvalley", MODDED_PACKAGE)
+            manifestFile.writeBytes(content.toByteArray(Charsets.UTF_8))
+            log("Package changed (byte-level fallback)")
+        } catch (e: Exception) {
+            log("Manifest modify failed: ${e.message}")
+        }
     }
 
     private fun injectSmapi(decompiledDir: File) {
