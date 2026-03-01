@@ -129,25 +129,23 @@ class PatcherService(private val context: Context) {
 
         // Try byte-level replacement (works sometimes for simple strings)
         try {
-            val bytes = manifestFile.readBytes()
+            var bytes = manifestFile.readBytes()
             val original = "com.chucklefish.stardewvalley"
             val modified = MODDED_PACKAGE
             
-            var modifiedBytes = bytes
             val originalBytes = original.toByteArray(Charsets.UTF_8)
-            val modifiedBytesArray = modified.toByteArray(Charsets.UTF_8)
+            val modifiedBytesArr = modified.toByteArray(Charsets.UTF_8)
             
-            // Replace all occurrences
-            var index = modifiedBytes.indexOf(originalBytes)
-            while (index >= 0) {
-                modifiedBytes = modifiedBytes.sliceArray(0 until index) + 
-                              modifiedBytesArray + 
-                              modifiedBytes.sliceArray((index + originalBytes.size) until modifiedBytes.size)
-                index = modifiedBytes.indexOf(originalBytes, index + modifiedBytesArray.size)
+            // Replace all occurrences using simple string replacement on decoded content
+            val content = String(bytes, Charsets.UTF_8)
+            if (content.contains(original)) {
+                val newContent = content.replace(original, modified)
+                bytes = newContent.toByteArray(Charsets.UTF_8)
+                manifestFile.writeBytes(bytes)
+                log("Package name changed to $MODDED_PACKAGE")
+            } else {
+                log("Package name not found in manifest")
             }
-            
-            manifestFile.writeBytes(modifiedBytes)
-            log("Package name changed to $MODDED_PACKAGE")
         } catch (e: Exception) {
             log("Manifest modify failed: ${e.message}")
             // Continue anyway - the APK will keep original package name
